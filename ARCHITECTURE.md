@@ -90,16 +90,90 @@ src/stac_cog_xarray/
 
 The ascending-y / top-down-affine duality is resolved in `_raw_getitem` by converting logical y-indices to physical row indices before computing `chunk_affine`, and flipping the result array before returning.
 
-## Reprojection
+## Per-chunk read and resample pipeline
 
-`reproject_array()` in `_reproject.py` performs nearest-neighbor reprojection without GDAL:
+Each call to `_read_item_band()` in `_chunk_reader.py` follows a four-step pipeline to turn a remote COG into a correctly-sized, correctly-projected numpy array for one destination chunk.
 
-1. Build a full meshgrid of destination pixel-centre coordinates.
+### 1. Overview selection
+
+Before fetching any pixels, `_select_overview()` picks the right level of the COG's built-in pyramid. The target resolution is estimated in the source image's native CRS: if `dst_crs` differs from the COG's CRS, a 1-pixel offset at the chunk centre is transformed with pyproj to approximate the pixel size in source units. The overview list (ordered finest → coarsest) is then walked to find the first overview whose pixel size is at least as large as that target. Using a coarser-than-needed overview would lose detail; using a finer one reads more bytes than necessary. If no overview is coarse enough, or no overviews exist, full-resolution is used.
+
+This is the primary resampling control: the pyramid level is chosen to match the output resolution, so the reprojection step works on roughly the right amount of data.
+
+### 2. Source window computation
+
+The destination chunk's bounding box (in `dst_crs`) is reprojected to the source CRS via pyproj. The inverse of the source affine transform maps those four corners to fractional pixel coordinates. `floor`/`ceil` and clamping to image bounds gives the `Window` that covers exactly the source pixels needed. Only that window is fetched from the COG, minimising I/O.
+
+If the chunk bbox falls entirely outside the source image after clamping, `_native_window()` returns `None` and the item is skipped.
+
+### 3. Tile read
+
+`await reader.read(window=window)` fetches the windowed pixel data from the selected overview level (or full-res). The result is a `(bands, window_h, window_w)` array in the source CRS/grid.
+
+### 4. Nearest-neighbor reprojection
+
+`reproject_array()` in `_reproject.py` warps the source tile onto the destination chunk grid without GDAL:
+
+1. Build a meshgrid of destination pixel-centre coordinates.
 2. Transform all coordinates from `dst_crs` to `src_crs` in one vectorised `Transformer.transform()` call.
-3. Apply the inverse source affine transform to convert coordinates to fractional source pixel indices.
-4. Use numpy fancy indexing to sample the source array. Out-of-bounds pixels get the nodata fill value.
+3. Apply the inverse source affine transform to get fractional source pixel indices.
+4. `np.floor` rounds to the nearest-neighbor sample; numpy fancy indexing populates the output array.
+5. Out-of-bounds pixels get the nodata fill value.
 
-This processes every destination pixel in a single PROJ call, which is more PROJ calls than GDAL's approximation-grid approach but requires no approximation logic and no external dependencies beyond pyproj and numpy.
+Nearest-neighbor is the only supported resampling method.
+
+## Concurrency model
+
+There are three nested layers of concurrency in a chunk read.
+
+**Dask (chunk level).** When a dask-backed DataArray is computed, dask dispatches each chunk task to a worker thread. Each worker thread calls `_run_coroutine()` in `_backend.py`, which calls `asyncio.run()` to create a fresh event loop for that chunk. Worker threads are independent — they share no state except the thread-local store cache in `_store.py`.
+
+**asyncio (item level).** Inside a chunk's event loop, `async_mosaic_chunk` fires `_read_item_band()` for all overlapping items concurrently via `asyncio.gather`. COG header reads and tile fetches from `async-geotiff` are all awaitable, so the event loop multiplexes them without blocking.
+
+**Thread pool (CPU work per item).** `reproject_array` is synchronous CPU-bound work — there is no way to await it. Calling it directly in the coroutine would block the event loop and stall all other pending tile reads in the same `asyncio.gather`. Instead, each completed tile read immediately submits its reprojection to the event loop's default `ThreadPoolExecutor` via `loop.run_in_executor(None, ...)`. The event loop is then free to process the next completed tile read while earlier reprojections run in parallel on other threads.
+
+This means I/O and CPU work overlap: reprojections for items whose tiles arrived first run while tiles for other items are still in flight.
+
+**Why threads, not a process pool.** `pyproj.Transformer.transform()` and numpy's fancy-indexing both release the GIL during their heavy inner loops. Threads therefore give real CPU parallelism here — not just interleaving — without the overhead of process spawning and array pickling that a `ProcessPoolExecutor` would require.
+
+**Thread count under dask.** `run_in_executor(None, ...)` uses the event loop's default executor, which Python sizes at `min(32, cpu_count + 4)`. Each dask worker thread calls `asyncio.run()` and gets a fresh event loop with its own executor. Under heavy parallelism the total thread count can reach `dask_workers × (cpu_count + 4)`. In practice these threads are short-lived and the OS scheduler handles it, but it is worth keeping in mind when tuning dask worker counts on memory-constrained machines.
+
+**Jupyter fallback.** Jupyter kernels run a persistent event loop, which prevents re-entrant `asyncio.run()` calls. `_run_coroutine()` detects this with `asyncio.get_running_loop()` and falls back to spawning a single-worker `ThreadPoolExecutor`, submitting `asyncio.run(coro)` to that thread so it gets its own loop. The rest of the concurrency model is unchanged.
+
+## Chunking strategy and throughput tradeoffs
+
+The `chunks` argument to `open()` / `open_async()` controls whether the returned DataArray is backed by dask. Choosing the wrong chunking strategy — particularly adding spatial chunks — can significantly reduce throughput compared to leaving the array unchunked.
+
+### Why spatial chunks hurt
+
+Without spatial chunks, xarray calls `MultiBandStacBackendArray.__getitem__` once per time step for the full spatial extent. That single call fires one `asyncio.gather` that reads every overlapping COG for that time step concurrently. This is the maximum possible I/O parallelism for a time step: all tile fetches are in flight simultaneously in a single event loop.
+
+With spatial chunks (e.g. `chunks={"x": 512, "y": 512}`), dask splits the extent into N tasks. Each task:
+
+- Runs a separate `rustac.search_sync` DuckDB query to find overlapping items.
+- Creates a fresh event loop and default `ThreadPoolExecutor`.
+- Fires a smaller `asyncio.gather` over only the COGs that overlap its sub-region.
+
+The total number of COG reads is the same, but they are spread across N smaller gathers rather than one large one. Dask workers do provide some task-level parallelism, but the overhead of N DuckDB queries, N event loop creations, and N executor instantiations typically outweighs the benefit, especially for small chunk sizes. A COG that spans multiple spatial chunks is also opened once per overlapping chunk rather than once per time step.
+
+The async layer already handles spatial I/O concurrency. Dask spatial chunks add overhead without adding concurrency.
+
+### Where dask helps
+
+**Time and band dimensions** are where dask pays off. Different time steps and different bands are fully independent, and the async layer does nothing to parallelize across them. `chunks={"time": 1}` lets dask run multiple time steps in parallel across worker threads, each with its own full-spatial-extent gather. The same applies to band chunks.
+
+**Memory pressure** is the other legitimate reason to add spatial chunks. If the full array does not fit in memory, spatial chunking limits how much is materialised at once even if it costs throughput.
+
+### Recommended defaults
+
+| Goal | Suggested `chunks` |
+|---|---|
+| Maximum throughput, array fits in memory | omit `chunks` (or `chunks={}`) |
+| Parallelise across time, memory is not a constraint | `{"time": 1}` |
+| Parallelise across time and band | `{"time": 1, "band": 1}` |
+| Large array that does not fit in memory | `{"time": 1, "x": N, "y": N}` with N as large as memory allows |
+
+When spatial chunks are necessary for memory reasons, making them as large as possible minimises per-chunk overhead and keeps the `asyncio.gather` fan-out wide.
 
 ## Temporal grouping
 

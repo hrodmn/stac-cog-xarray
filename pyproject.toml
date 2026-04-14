@@ -1,7 +1,7 @@
 [project]
 name = "stac-cog-xarray"
 version = "0.1.0"
-description = "Add your description here"
+description = "Lazily load COG assets from STAC items into xarray DataArrays using async-geotiff"
 readme = "README.md"
 authors = [
     { name = "hrodmn", email = "henry.rodman@gmail.com" }
