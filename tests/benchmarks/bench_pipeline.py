@@ -10,7 +10,7 @@ Run with:
 import pytest
 
 import lazycogs
-from lazycogs import FirstMethod, MedianMethod
+from lazycogs import FirstMethod, MedianMethod, MosaicMethodBase
 
 from .conftest import BENCHMARK_BBOX, BENCHMARK_CRS
 
@@ -49,7 +49,9 @@ def test_full_compute(benchmark, benchmark_parquet: str) -> None:
 
 @pytest.mark.benchmark
 @pytest.mark.parametrize("method", [FirstMethod, MedianMethod], ids=["first", "median"])
-def test_mosaic_method(benchmark, benchmark_parquet: str, method: type) -> None:
+def test_mosaic_method(
+    benchmark, benchmark_parquet: str, method: type[MosaicMethodBase]
+) -> None:
     """Compare mosaic strategy cost end-to-end."""
 
     def run() -> object:
@@ -58,28 +60,9 @@ def test_mosaic_method(benchmark, benchmark_parquet: str, method: type) -> None:
             bbox=BENCHMARK_BBOX,
             crs=BENCHMARK_CRS,
             resolution=60.0,
+            time_period="P1M",
             mosaic_method=method,
         )
         return da.compute()
-
-    benchmark(run)
-
-
-@pytest.mark.benchmark
-def test_ndvi(benchmark, benchmark_parquet: str) -> None:
-    """Open + compute + NDVI calculation (B04=Red, B8A=Narrow NIR)."""
-
-    def run() -> object:
-        da = lazycogs.open(
-            benchmark_parquet,
-            bbox=BENCHMARK_BBOX,
-            crs=BENCHMARK_CRS,
-            resolution=20.0,
-            bands=["red", "nir08"],
-        )
-        arr = da.compute()
-        red = arr.sel(band="red").astype("float32")
-        nir = arr.sel(band="nir08").astype("float32")
-        return (nir - red) / (nir + red)
 
     benchmark(run)
