@@ -73,7 +73,7 @@ jobs:
             --benchmark-enable \
             --benchmark-save=pr-${{ github.sha }} \
             --benchmark-storage=.benchmarks \
-            --benchmark-compare=main \
+            --benchmark-compare='*_main' \
             --benchmark-compare-fail=mean:20% \
             -v
 
