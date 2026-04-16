@@ -47,6 +47,19 @@ da = stac_cog_xarray.open(
     resolution=10.0,
 )
 # No COGs have been read yet
+
+# Use time_period="P1W" to composite items within each ISO calendar week.
+# The default FirstMethod fills each pixel from the first item with a valid
+# (non-nodata) value, skipping remaining items in the week once all pixels
+# are filled. This is more efficient than post-hoc ffill or reductions over
+# a daily array, which would materialise every time step before reducing.
+da_weekly = stac_cog_xarray.open(
+    "items.parquet",
+    bbox=(380000.0, 4928000.0, 420000.0, 4984000.0),
+    crs="EPSG:32615",
+    resolution=10.0,
+    time_period="P1W",
+)
 ```
 
 ## Documentation

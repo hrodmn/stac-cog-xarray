@@ -200,6 +200,36 @@ Each grouper provides three methods: `group_key()` maps a datetime string to a s
 
 These are copied from `rio-tiler` (MIT licence, zero GDAL imports) to avoid pulling in rasterio as a transitive dependency.
 
+## Temporal compositing
+
+Combining `time_period` with a mosaic method is the idiomatic way to produce
+temporal composites. Setting `time_period="P1W"` groups every STAC item within
+the same ISO calendar week into a single time step. When a chunk is read,
+`async_mosaic_chunk` feeds all items for that week to the mosaic method in
+order. With `FirstMethod` (the default), reading stops as soon as every output
+pixel has a valid (non-nodata) value — the remaining items in the week are
+never fetched.
+
+Note that mosaic methods operate on nodata masks only; they have no awareness
+of semantic content like clouds. Pixels that are not masked as nodata in the
+source COG will be treated as valid regardless of what they represent. If
+cloud masking is desired, it must be applied to the source data before
+stac-cog-xarray reads it (for example, by using scene-level cloud-mask bands
+to set nodata at the COG level).
+
+This approach is substantially more efficient than applying temporal reductions
+as post-processing steps on a daily array. Operations like `ffill(dim="time")`
+or `max(dim="time")` over a dask-backed DataArray force xarray to materialise
+every time step before reducing, because each step's result depends on the
+previous one (for `ffill`) or all steps at once (for `max`). A weekly composite
+opened with `time_period="P1W"` reads at most one week's worth of COGs per
+output time step, with early exit when the mosaic is complete.
+
+The general rule: push compositing logic into `time_period` and `mosaic_method`
+at `open()` time. Reach for post-hoc xarray reductions only for operations that
+cannot be expressed as a per-time-step mosaic (for example, a multi-week
+mean that requires all weeks to be present before reducing).
+
 ## Store caching and the `store` parameter
 
 By default, `store_from_href()` in `_store.py` maintains a thread-local `dict[str, Store]` keyed by root URL (`scheme://netloc`). Because dask tasks run in threads, this avoids repeated connection setup within a single task while remaining safe across concurrent tasks.
