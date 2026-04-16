@@ -1,4 +1,4 @@
-# lazycogs
+![./lazycogs.png](lazycogs)
 
 Open a geoparquet STAC item collection as a lazy `(time, band, y, x)` xarray DataArray backed by Cloud Optimized GeoTIFFs. No GDAL required.
 
