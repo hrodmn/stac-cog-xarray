@@ -473,6 +473,10 @@ class MultiBandStacBackendArray(BackendArray):
             dtype=self.dtype,
         )
 
+        # Shared across all time steps: source tiles at the same grid position
+        # (identical src_transform + src_crs) reuse the same WarpMap.
+        warp_cache: dict = {}
+
         for i, t_idx in enumerate(time_indices):
             date = ref.dates[t_idx]
 
@@ -510,6 +514,7 @@ class MultiBandStacBackendArray(BackendArray):
                     mosaic_method_cls=ref.mosaic_method_cls,
                     store=ref.store,
                     max_concurrent_reads=ref.max_concurrent_reads,
+                    warp_cache=warp_cache,
                 )
             )
             logger.debug(

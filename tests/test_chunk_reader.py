@@ -315,6 +315,49 @@ def test_apply_bands_with_warp_cache_different_geometry():
     assert set(results) == {"B01", "B02"}
 
 
+def test_apply_bands_with_warp_cache_shared_across_calls():
+    """A shared external cache reuses warp maps across separate calls (e.g. time steps)."""
+    crs = CRS.from_epsg(4326)
+    transform = Affine(1.0, 0.0, 0.0, 0.0, -1.0, 4.0)
+    dst_transform = Affine(1.0, 0.0, 0.0, 0.0, -1.0, 4.0)
+
+    raster = _make_raster(transform, 1.0)
+    shared_cache: dict = {}
+
+    warp_map_calls = []
+
+    def _spy_compute_warp_map(*args, **kwargs):
+        from lazycogs._reproject import compute_warp_map as _real
+
+        result = _real(*args, **kwargs)
+        warp_map_calls.append(True)
+        return result
+
+    with patch(
+        "lazycogs._chunk_reader.compute_warp_map", side_effect=_spy_compute_warp_map
+    ):
+        _apply_bands_with_warp_cache(
+            [("B01", raster, crs, None)],
+            dst_transform,
+            crs,
+            dst_width=4,
+            dst_height=4,
+            warp_cache=shared_cache,
+        )
+        _apply_bands_with_warp_cache(
+            [("B01", raster, crs, None)],
+            dst_transform,
+            crs,
+            dst_width=4,
+            dst_height=4,
+            warp_cache=shared_cache,
+        )
+
+    # Warp map computed only once despite two separate calls.
+    assert len(warp_map_calls) == 1
+    assert len(shared_cache) == 1
+
+
 # ---------------------------------------------------------------------------
 # async_mosaic_chunk_multiband
 # ---------------------------------------------------------------------------

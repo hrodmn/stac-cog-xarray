@@ -385,16 +385,21 @@ def _apply_bands_with_warp_cache(
     dst_crs: CRS,
     dst_width: int,
     dst_height: int,
+    warp_cache: dict[tuple[tuple[float, ...], str], WarpMap] | None = None,
 ) -> dict[str, tuple[np.ndarray, float | None]]:
     """Apply warp maps to multiple band rasters, reusing maps for identical geometries.
 
-    Maintains a local cache keyed on ``(tuple(raster.transform), src_crs.to_wkt())``.
-    Bands that share the same source CRS and window transform (the common case for
-    bands from the same STAC item) compute the warp map once and share it.  Bands
-    with different geometries each compute their own correct warp map.
+    Checks ``warp_cache`` (keyed on ``(tuple(raster.transform), src_crs.to_wkt())``)
+    before computing a new warp map.  When ``warp_cache`` is shared across calls
+    (e.g. across time steps in a single chunk read), warp maps for recurring tile
+    geometries are computed only once.  Bands with different geometries each get
+    their own correct warp map.
 
     This function is designed to run inside a thread executor — it is CPU-bound
-    and must not be called from the async event loop directly.
+    and must not be called from the async event loop directly.  When ``warp_cache``
+    is shared across concurrent executor calls, two threads may both compute the
+    same warp map before either stores it; this is safe because ``compute_warp_map``
+    is deterministic and the duplicate result is simply overwritten.
 
     Args:
         band_rasters: List of ``(band_name, raster, src_crs, effective_nodata)``
@@ -404,12 +409,16 @@ def _apply_bands_with_warp_cache(
         dst_crs: CRS of the destination grid.
         dst_width: Width of the destination grid in pixels.
         dst_height: Height of the destination grid in pixels.
+        warp_cache: Optional external cache shared across calls.  When ``None``
+            a fresh local dict is used (original per-item behaviour).
 
     Returns:
         ``dict`` mapping band name to ``(reprojected_array, effective_nodata)``.
 
     """
-    cache: dict[tuple[tuple[float, ...], str], WarpMap] = {}
+    cache: dict[tuple[tuple[float, ...], str], WarpMap] = (
+        warp_cache if warp_cache is not None else {}
+    )
     results: dict[str, tuple[np.ndarray, float | None]] = {}
 
     for band, raster, src_crs, effective_nodata in band_rasters:
@@ -440,6 +449,7 @@ async def _read_item_bands(
     chunk_height: int,
     nodata: float | None,
     store: object | None = None,
+    warp_cache: dict | None = None,
 ) -> dict[str, tuple[np.ndarray, float | None]] | None:
     """Read and reproject multiple bands from one STAC item, sharing warp maps.
 
@@ -459,6 +469,8 @@ async def _read_item_bands(
         nodata: No-data fill value.  When ``None``, the value stored in the
             COG header (``GeoTIFF.nodata``) is used if present.
         store: Optional pre-configured obstore ``ObjectStore`` instance.
+        warp_cache: Optional cache shared across calls for reusing warp maps
+            computed in earlier time steps.
 
     Returns:
         ``dict`` mapping band name to ``(array, effective_nodata)`` where
@@ -566,6 +578,7 @@ async def _read_item_bands(
             dst_crs,
             chunk_width,
             chunk_height,
+            warp_cache,
         ),
     )
     return results
@@ -582,6 +595,7 @@ async def async_mosaic_chunk_multiband(
     mosaic_method_cls: type[MosaicMethodBase] | None = None,
     store: object | None = None,
     max_concurrent_reads: int = 32,
+    warp_cache: dict | None = None,
 ) -> dict[str, np.ndarray]:
     """Read, reproject, and mosaic multiple bands from a list of STAC items.
 
@@ -605,6 +619,8 @@ async def async_mosaic_chunk_multiband(
             Defaults to :class:`~lazycogs._mosaic_methods.FirstMethod`.
         store: Optional pre-configured obstore ``ObjectStore`` instance.
         max_concurrent_reads: Maximum number of COG reads to run concurrently.
+        warp_cache: Optional cache shared across calls for reusing warp maps
+            from earlier time steps.
 
     Returns:
         ``dict`` mapping each band name to an array of shape
@@ -637,6 +653,7 @@ async def async_mosaic_chunk_multiband(
                 chunk_height,
                 nodata,
                 store=store,
+                warp_cache=warp_cache,
             )
 
     batch_size = min(max_concurrent_reads, len(items))
