@@ -30,6 +30,7 @@ build-backend = "uv_build"
 
 [dependency-groups]
 dev = [
+    "stac-cog-xarray[dask]",
     "jupyter>=1.1.1",
     "lab>=8.9",
     "pytest>=9.0.3",
@@ -39,9 +40,6 @@ docs = [
     "mkdocs-material>=9.7.6",
     "mkdocstrings[python]>=1.0.3",
 ]
-
-[tool.uv]
-default-extras = ["dask"]
 
 [tool.ruff]
 exclude = []

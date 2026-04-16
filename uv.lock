@@ -2494,6 +2494,7 @@ dev = [
     { name = "jupyter" },
     { name = "lab" },
     { name = "pytest" },
+    { name = "stac-cog-xarray", extra = ["dask"] },
 ]
 docs = [
     { name = "mkdocs-jupyter" },
@@ -2518,6 +2519,7 @@ dev = [
     { name = "jupyter", specifier = ">=1.1.1" },
     { name = "lab", specifier = ">=8.9" },
     { name = "pytest", specifier = ">=9.0.3" },
+    { name = "stac-cog-xarray", extras = ["dask"] },
 ]
 docs = [
     { name = "mkdocs-jupyter", specifier = ">=0.26.2" },
