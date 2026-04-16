@@ -141,8 +141,15 @@ If the chunk bbox falls entirely outside the source image after clamping, `_nati
 1. Build a meshgrid of destination pixel-centre coordinates.
 2. Transform all coordinates from `dst_crs` to `src_crs` in one vectorised `Transformer.transform()` call.
 3. Apply the inverse source affine transform to get fractional source pixel indices.
-4. `np.floor` rounds to the nearest-neighbor sample; numpy fancy indexing populates the output array.
+4. `np.floor` rounds to the nearest-neighbor sample; `apply_warp_map` populates the output array.
 5. Out-of-bounds pixels get the nodata fill value.
+
+`apply_warp_map` has two implementations selected at import time:
+
+- **Numba path** (when `lazycogs[numba]` is installed): a `@njit(parallel=True, cache=True)` kernel parallelises the pixel gather loop with `prange`, distributing destination pixels across CPU cores within a single tile.
+- **numpy path** (default): numpy fancy indexing — `out[:, valid] = data[:, row[valid], col[valid]]`.
+
+The Numba path adds within-tile CPU parallelism on top of the existing across-tile `ThreadPoolExecutor` parallelism. Note that Numba maintains its own thread pool (default: one thread per logical CPU). When dask is running many tile workers simultaneously, each spawning a Numba kernel, the combined thread count can exceed CPU count. Set `NUMBA_NUM_THREADS` to a smaller value (e.g. `2` or `4`) to tune throughput in that scenario.
 
 Nearest-neighbor is the only supported resampling method.
 

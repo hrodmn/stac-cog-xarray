@@ -24,6 +24,14 @@ Not yet published to PyPI. Install directly from GitHub:
 pip install git+https://github.com/hrodmn/lazycogs.git
 ```
 
+To enable the parallel Numba gather kernel for faster reprojection, install the `numba` extra:
+
+```bash
+pip install "lazycogs[numba] @ git+https://github.com/hrodmn/lazycogs.git"
+```
+
+When `numba` is installed, `apply_warp_map` automatically uses a `prange`-parallelised kernel instead of numpy fancy indexing. No code changes are needed.
+
 ## Quickstart
 
 ```python

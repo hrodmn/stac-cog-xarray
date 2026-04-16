@@ -20,6 +20,9 @@ dependencies = [
 dask = [
     "dask>=2026.3.0",
 ]
+numba = [
+    "numba>=0.61",
+]
 
 [build-system]
 requires = ["uv_build>=0.11.6,<0.12.0"]

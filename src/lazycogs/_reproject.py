@@ -8,6 +8,13 @@ import numpy as np
 from affine import Affine
 from pyproj import CRS, Transformer
 
+try:
+    from numba import njit, prange
+
+    _NUMBA_AVAILABLE = True
+except ImportError:
+    _NUMBA_AVAILABLE = False
+
 
 @dataclass
 class WarpMap:
@@ -82,6 +89,32 @@ def compute_warp_map(
     )
 
 
+if _NUMBA_AVAILABLE:
+
+    @njit(parallel=True, cache=True)
+    def _gather_kernel(
+        data: np.ndarray,
+        src_row: np.ndarray,
+        src_col: np.ndarray,
+        out: np.ndarray,
+        src_h: int,
+        src_w: int,
+    ) -> None:
+        """Parallel gather: copy source pixels into a pre-allocated flat output.
+
+        Out-of-bounds pixels are left at whatever value ``out`` was initialized
+        with (the caller sets the fill via ``np.full``).
+        """
+        bands = data.shape[0]
+        n_pixels = src_row.shape[0]
+        for i in prange(n_pixels):
+            r = src_row[i]
+            c = src_col[i]
+            if 0 <= r < src_h and 0 <= c < src_w:
+                for b in range(bands):
+                    out[b, i] = data[b, r, c]
+
+
 def apply_warp_map(
     data: np.ndarray,
     warp_map: WarpMap,
@@ -92,6 +125,10 @@ def apply_warp_map(
     The valid mask is derived from ``data.shape`` at call time so the same
     ``warp_map`` can be safely applied to bands with slightly different window
     dimensions.
+
+    When the ``numba`` optional dependency is installed, the gather loop runs
+    in parallel across destination pixels via ``numba.prange``.  Without it the
+    function falls back to numpy fancy indexing.
 
     Args:
         data: Source data with shape ``(bands, src_h, src_w)``.
@@ -108,13 +145,24 @@ def apply_warp_map(
     dst_height, dst_width = warp_map.src_col_idx.shape
     fill = nodata if nodata is not None else 0
 
+    if _NUMBA_AVAILABLE:
+        out = np.full((bands, dst_height * dst_width), fill, dtype=data.dtype)
+        _gather_kernel(
+            data,
+            warp_map.src_row_idx.ravel(),
+            warp_map.src_col_idx.ravel(),
+            out,
+            src_h,
+            src_w,
+        )
+        return out.reshape(bands, dst_height, dst_width)
+
     valid = (
         (warp_map.src_col_idx >= 0)
         & (warp_map.src_col_idx < src_w)
         & (warp_map.src_row_idx >= 0)
         & (warp_map.src_row_idx < src_h)
     )
-
     out = np.full((bands, dst_height, dst_width), fill, dtype=data.dtype)
     out[:, valid] = data[:, warp_map.src_row_idx[valid], warp_map.src_col_idx[valid]]
     return out
