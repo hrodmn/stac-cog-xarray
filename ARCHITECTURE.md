@@ -25,6 +25,7 @@ src/stac_cog_xarray/
   _core.py           Entry point. open() / open_async(), band discovery, time-step building.
   _backend.py        StacBackendArray (per-band) and MultiBandStacBackendArray (4-D wrapper) — xarray BackendArray implementations that bridge xarray indexing to chunk reads.
   _chunk_reader.py   Async mosaic logic: open COGs, select overviews, read windows, reproject, mosaic.
+  _explain.py        Dry-run read estimator. Registers the da.stac_cog.explain() xarray accessor.
   _grid.py           Compute output affine transform and coordinate arrays from bbox + resolution.
   _reproject.py      Nearest-neighbor reprojection using pyproj Transformer + numpy fancy indexing.
   _store.py          Parse cloud HREFs into thread-local obstore Store instances; extract object paths when a store is provided externally.
@@ -45,8 +46,31 @@ src/stac_cog_xarray/
 7. For each band, creates a `StacBackendArray` (a dataclass) holding all the parameters needed to materialise any chunk later.
 8. Wraps all per-band arrays in a single `MultiBandStacBackendArray` with shape `(band, time, y, x)`, then wraps that in one `xarray.core.indexing.LazilyIndexedArray`. This avoids `xr.concat` (used internally by `ds.to_array()`), which would eagerly load `LazilyIndexedArray`-backed objects.
 9. Constructs the `xr.DataArray` directly from the 4-D variable. If `chunks` is provided, calls `.chunk(chunks)` to convert to a dask-backed array; otherwise the `LazilyIndexedArray` remains in play so narrow slices (e.g. a single pixel) translate to minimal I/O.
+10. Stores `_stac_backends` (the list of `StacBackendArray` instances) and `_stac_time_coords` (the full time coordinate array) in `da.attrs` so that `da.stac_cog.explain()` can reconstruct the explain plan without re-specifying `open()` parameters.
 
 `open()` is a thin synchronous wrapper that calls `asyncio.run(open_async(...))`.
+
+## Explain: dry-run read estimator
+
+`da.stac_cog.explain()` (registered in `_explain.py` as an xarray accessor) provides an `EXPLAIN ANALYZE`-style dry run. It runs the same DuckDB spatial queries that fire during `.compute()` — one per `(band, time step, spatial chunk)` combination — but stops before any pixel I/O.
+
+```python
+plan = da.stac_cog.explain()          # DuckDB queries only, no pixel reads
+plan = da.stac_cog.explain(fetch_headers=True)  # also reads COG IFD headers
+print(plan.summary())
+df = plan.to_dataframe()
+```
+
+The accessor reads `_stac_backends` and `_stac_time_coords` from `da.attrs` and respects the DataArray's current extent and chunk sizes, so explaining a sliced DataArray (`da.isel(time=0).stac_cog.explain()`) queries only the reads needed for that slice.
+
+`ExplainPlan` exposes:
+- `total_chunk_reads` — number of `(band, time, spatial tile)` combinations
+- `total_cog_reads` — total COG files matched across all chunks
+- `empty_chunk_count` — chunks with no matching COG files (useful for diagnosing sparse series)
+- `summary()` — multi-line human-readable report with COG-read distribution histogram
+- `to_dataframe()` — one row per `(chunk, COG file)` for further analysis in pandas
+
+With `fetch_headers=True`, each matched COG header is fetched (a small HTTP range request to read the IFD block) and `CogRead.overview_level`, `window_col_off`, `window_row_off`, `window_width`, and `window_height` are populated.
 
 ## Phase 1 in detail
 
@@ -70,7 +94,7 @@ src/stac_cog_xarray/
 
 `async_mosaic_chunk` in `_chunk_reader.py`:
 
-1. Launches `_read_item_band()` concurrently for all items via `asyncio.gather`.
+1. Processes items in batches of `max_concurrent_reads` (default 32) using `asyncio.gather` with an `asyncio.Semaphore` to bound the number of concurrent reads. This limits peak in-flight memory when a chunk overlaps many COGs.
 2. For each item:
    a. If a `store` was supplied by the caller, `path_from_href(href)` extracts just the object path within that store. Otherwise, `store_from_href(href)` returns a thread-local `obstore` store and an object path.
    b. `await GeoTIFF.open(path, store=store)` opens the COG header.
@@ -78,7 +102,7 @@ src/stac_cog_xarray/
    d. `_native_window()` computes the pixel window in source space that covers the chunk bbox, clamped to the image extent.
    e. `await reader.read(window=window)` fetches the tile data.
    f. `reproject_array()` warps the read data to the destination chunk grid.
-3. Each reprojected array is fed to the `MosaicMethodBase` instance. If `mosaic_method.is_done` becomes true (e.g. `FirstMethod` with no nodata pixels remaining), the loop breaks early.
+3. Each reprojected array is fed to the `MosaicMethodBase` instance. If `mosaic_method.is_done` becomes true (e.g. `FirstMethod` with no nodata pixels remaining), the current batch finishes and all remaining batches are skipped — so items are never read once the mosaic is complete.
 4. Returns `mosaic_method.data` as a `(bands, chunk_height, chunk_width)` array.
 
 ## Grid and coordinate convention
@@ -128,7 +152,7 @@ There are three nested layers of concurrency in a chunk read.
 
 **Dask (chunk level).** When a dask-backed DataArray is computed, dask dispatches each chunk task to a worker thread. Each worker thread calls `_run_coroutine()` in `_backend.py`, which calls `asyncio.run()` to create a fresh event loop for that chunk. Worker threads are independent — they share no state except the thread-local store cache in `_store.py`.
 
-**asyncio (item level).** Inside a chunk's event loop, `async_mosaic_chunk` fires `_read_item_band()` for all overlapping items concurrently via `asyncio.gather`. COG header reads and tile fetches from `async-geotiff` are all awaitable, so the event loop multiplexes them without blocking.
+**asyncio (item level).** Inside a chunk's event loop, `async_mosaic_chunk` processes overlapping items in batches of `max_concurrent_reads` (configurable via `open()`, default 32). Each batch fires `_read_item_band()` concurrently via `asyncio.gather` with an `asyncio.Semaphore` enforcing the limit. COG header reads and tile fetches from `async-geotiff` are all awaitable, so the event loop multiplexes them without blocking. Batching caps peak in-flight memory and enables true early exit: if the mosaic method signals completion within a batch, subsequent batches are never issued.
 
 **Thread pool (CPU work per item).** `reproject_array` is synchronous CPU-bound work — there is no way to await it. Calling it directly in the coroutine would block the event loop and stall all other pending tile reads in the same `asyncio.gather`. Instead, each completed tile read immediately submits its reprojection to the event loop's default `ThreadPoolExecutor` via `loop.run_in_executor(None, ...)`. The event loop is then free to process the next completed tile read while earlier reprojections run in parallel on other threads.
 
@@ -173,7 +197,7 @@ The async layer already handles spatial I/O concurrency. Dask spatial chunks add
 | Parallelise across time and band | `{"time": 1, "band": 1}` |
 | Large array that does not fit in memory | `{"time": 1, "x": N, "y": N}` with N as large as memory allows |
 
-When spatial chunks are necessary for memory reasons, making them as large as possible minimises per-chunk overhead and keeps the `asyncio.gather` fan-out wide.
+When spatial chunks are necessary for memory reasons, making them as large as possible minimises per-chunk overhead and keeps the `asyncio.gather` fan-out wide. An alternative to adding spatial chunks is reducing `max_concurrent_reads` on `open()`: this limits peak in-flight memory per chunk without the overhead of smaller dask tasks or additional DuckDB queries.
 
 ## Temporal grouping
 

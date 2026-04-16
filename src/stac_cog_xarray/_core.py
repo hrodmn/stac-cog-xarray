@@ -13,7 +13,11 @@ import xarray as xr
 from pyproj import CRS, Transformer
 from xarray.core import indexing
 
-from stac_cog_xarray._backend import MultiBandStacBackendArray, StacBackendArray
+from stac_cog_xarray._backend import (
+    MultiBandStacBackendArray,
+    StacBackendArray,
+    _TimeCoordArray,
+)
 from stac_cog_xarray._grid import compute_output_grid
 from stac_cog_xarray._mosaic_methods import FirstMethod, MosaicMethodBase
 from stac_cog_xarray._temporal import _TemporalGrouper, grouper_from_period
@@ -148,6 +152,7 @@ def _build_dataarray(
     method_cls: type[MosaicMethodBase],
     chunks: dict[str, int] | None,
     store: ObjectStore | None = None,
+    max_concurrent_reads: int = 32,
 ) -> xr.DataArray:
     """Assemble the lazy DataArray from pre-computed parameters.
 
@@ -176,6 +181,9 @@ def _build_dataarray(
         store: Pre-configured obstore ``ObjectStore`` instance.  When
             provided, it is used directly for all asset reads instead of
             resolving a store from each HREF.
+        max_concurrent_reads: Maximum number of COG reads to run concurrently
+            per chunk.  Passed to each
+            :class:`~stac_cog_xarray._backend.StacBackendArray`.
 
     Returns:
         Lazy ``xr.DataArray`` with dimensions ``(time, band, y, x)``.
@@ -203,6 +211,7 @@ def _build_dataarray(
             shape=(len(filter_strings), dst_height, dst_width),
             mosaic_method_cls=method_cls,
             store=store,
+            max_concurrent_reads=max_concurrent_reads,
         )
         for band in resolved_bands
     ]
@@ -224,7 +233,7 @@ def _build_dataarray(
 
     time_coord = np.array(time_coords, dtype="datetime64[D]")
 
-    return xr.DataArray(
+    da = xr.DataArray(
         var,
         coords={
             "band": resolved_bands,
@@ -233,6 +242,12 @@ def _build_dataarray(
             "x": x_coords,
         },
     )
+    # Store explain metadata so that da.stac_cog.explain() can reconstruct
+    # which DuckDB queries to run without re-specifying all open() parameters.
+    # Wrap time_coord so the xarray HTML repr shows a compact min/max summary.
+    da.attrs["_stac_backends"] = band_arrays
+    da.attrs["_stac_time_coords"] = _TimeCoordArray(time_coord)
+    return da
 
 
 async def open_async(  # noqa: A001
@@ -252,6 +267,7 @@ async def open_async(  # noqa: A001
     mosaic_method: type[MosaicMethodBase] | None = None,
     time_period: str = "P1D",
     store: ObjectStore | None = None,
+    max_concurrent_reads: int = 32,
 ) -> xr.DataArray:
     """Open a mosaic of STAC items as a lazy ``(time, band, y, x)`` DataArray.
 
@@ -309,6 +325,13 @@ async def open_async(  # noqa: A001
             non-default options are needed without relying on automatic store
             resolution from each HREF.  When ``None`` (default), each asset
             URL is parsed to create or reuse a per-thread cached store.
+        max_concurrent_reads: Maximum number of COG reads to run concurrently
+            per chunk.  Items are processed in batches of this size, which
+            bounds peak in-flight memory when a chunk overlaps many files.
+            Methods that support early exit (e.g. the default
+            :class:`~stac_cog_xarray._mosaic_methods.FirstMethod`) will stop
+            reading once every output pixel is filled, so lower values also
+            reduce unnecessary I/O on dense datasets.  Defaults to 32.
 
     Returns:
         Lazy ``xr.DataArray`` with dimensions ``(time, band, y, x)``.
@@ -405,6 +428,7 @@ async def open_async(  # noqa: A001
         method_cls=method_cls,
         chunks=chunks,
         store=store,
+        max_concurrent_reads=max_concurrent_reads,
     )
 
 
@@ -425,6 +449,7 @@ def open(  # noqa: A001
     mosaic_method: type[MosaicMethodBase] | None = None,
     time_period: str = "P1D",
     store: ObjectStore | None = None,
+    max_concurrent_reads: int = 32,
 ) -> xr.DataArray:
     """Open a mosaic of STAC items as a lazy ``(time, band, y, x)`` DataArray.
 
@@ -472,6 +497,9 @@ def open(  # noqa: A001
             non-default options are needed without relying on automatic store
             resolution from each HREF.  When ``None`` (default), each asset
             URL is parsed to create or reuse a per-thread cached store.
+        max_concurrent_reads: Maximum number of COG reads to run concurrently
+            per chunk.  See :func:`open_async` for full documentation.
+            Defaults to 32.
 
     Returns:
         Lazy ``xr.DataArray`` with dimensions ``(time, band, y, x)``.
@@ -499,5 +527,6 @@ def open(  # noqa: A001
             mosaic_method=mosaic_method,
             time_period=time_period,
             store=store,
+            max_concurrent_reads=max_concurrent_reads,
         )
     )

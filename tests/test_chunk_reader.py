@@ -1,10 +1,20 @@
-"""Tests for _chunk_reader helpers: _select_overview and _native_window."""
+"""Tests for _chunk_reader helpers: _select_overview, _native_window, and async_mosaic_chunk."""
 
-from unittest.mock import MagicMock
+from __future__ import annotations
 
+import asyncio
+from unittest.mock import MagicMock, patch
+
+import numpy as np
 from affine import Affine
+from pyproj import CRS
 
-from stac_cog_xarray._chunk_reader import _native_window, _select_overview
+from stac_cog_xarray._chunk_reader import (
+    _native_window,
+    _select_overview,
+    async_mosaic_chunk,
+)
+from stac_cog_xarray._mosaic_methods import FirstMethod
 
 
 # ---------------------------------------------------------------------------
@@ -130,3 +140,91 @@ def test_native_window_clamped_to_image_bounds():
     assert win.col_off == 2
     assert win.col_off + win.width <= 4  # clamped at image width
     assert win.row_off + win.height <= 4  # clamped at image height
+
+
+# ---------------------------------------------------------------------------
+# async_mosaic_chunk concurrency
+# ---------------------------------------------------------------------------
+
+
+def test_async_mosaic_chunk_limits_concurrent_reads():
+    """No more than max_concurrent_reads items are read concurrently."""
+    chunk_width, chunk_height = 4, 4
+    chunk_affine = Affine(1.0, 0.0, 0.0, 0.0, -1.0, 4.0)
+    dst_crs = CRS.from_epsg(4326)
+    n_items = 20
+    max_concurrent = 5
+
+    peak_concurrent = [0]
+    current_concurrent = [0]
+
+    async def _fake_read_item_band(*args, **kwargs):
+        current_concurrent[0] += 1
+        peak_concurrent[0] = max(peak_concurrent[0], current_concurrent[0])
+        await asyncio.sleep(0)  # yield to allow other coroutines to increment
+        arr = np.ones((1, chunk_height, chunk_width), dtype=np.float32)
+        current_concurrent[0] -= 1
+        return arr, None
+
+    items = [{"id": f"item-{i}", "assets": {}} for i in range(n_items)]
+
+    with patch(
+        "stac_cog_xarray._chunk_reader._read_item_band",
+        side_effect=_fake_read_item_band,
+    ):
+        asyncio.run(
+            async_mosaic_chunk(
+                items=items,
+                band="B01",
+                chunk_affine=chunk_affine,
+                dst_crs=dst_crs,
+                chunk_width=chunk_width,
+                chunk_height=chunk_height,
+                nodata=None,
+                max_concurrent_reads=max_concurrent,
+            )
+        )
+
+    assert peak_concurrent[0] <= max_concurrent
+
+
+def test_async_mosaic_chunk_early_exit_skips_remaining_reads():
+    """FirstMethod stops fetching items once all pixels are filled."""
+    chunk_width, chunk_height = 4, 4
+    chunk_affine = Affine(1.0, 0.0, 0.0, 0.0, -1.0, 4.0)
+    dst_crs = CRS.from_epsg(4326)
+    n_items = 30
+    # Each call returns a fully valid array, so FirstMethod completes on the
+    # first item.  With batch size 5, only the first batch (5 reads) should
+    # execute — 25 items should be skipped.
+    reads_executed = [0]
+
+    async def _fake_read_item_band(*args, **kwargs):
+        reads_executed[0] += 1
+        arr = np.ones((1, chunk_height, chunk_width), dtype=np.float32)
+        return arr, None
+
+    items = [{"id": f"item-{i}", "assets": {}} for i in range(n_items)]
+
+    with patch(
+        "stac_cog_xarray._chunk_reader._read_item_band",
+        side_effect=_fake_read_item_band,
+    ):
+        asyncio.run(
+            async_mosaic_chunk(
+                items=items,
+                band="B01",
+                chunk_affine=chunk_affine,
+                dst_crs=dst_crs,
+                chunk_width=chunk_width,
+                chunk_height=chunk_height,
+                nodata=None,
+                mosaic_method=FirstMethod(),
+                max_concurrent_reads=5,
+            )
+        )
+
+    # Only one batch of 5 should have been read; the mosaic fills on item 0
+    # but the whole batch still runs.  Critically, the remaining 25 items
+    # should NOT be read.
+    assert reads_executed[0] <= 5

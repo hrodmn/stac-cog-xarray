@@ -62,6 +62,40 @@ da_weekly = stac_cog_xarray.open(
 )
 ```
 
+## Inspecting read plans
+
+Before computing an array, you can ask what DuckDB queries and COG reads would
+fire without touching any pixel data. The `da.stac_cog.explain()` method runs
+the same spatial queries as `.compute()` but stops before any I/O:
+
+```python
+da = stac_cog_xarray.open(
+    "items.parquet",
+    bbox=(380000.0, 4928000.0, 420000.0, 4984000.0),
+    crs="EPSG:32615",
+    resolution=10.0,
+    chunks={"time": 1, "x": 512, "y": 512},
+)
+
+# Inspect without reading pixels
+plan = da.stac_cog.explain()
+print(plan.summary())
+
+# Explain a specific slice
+plan_subset = da.isel(time=0).stac_cog.explain()
+
+# Convert to a DataFrame for analysis
+df = plan.to_dataframe()
+df.groupby("band")["n_cog_reads"].describe()
+
+# Fetch COG headers to see which overview level and pixel window would be read
+plan_full = da.stac_cog.explain(fetch_headers=True)
+```
+
+The `ExplainPlan` returned shows how many items are matched per chunk, the
+distribution of items-per-chunk (useful for spotting over-lapping scene edges),
+and the empty-chunk fraction (useful for diagnosing sparse time series).
+
 ## Documentation
 
 - [Demo notebook](https://hrodmn.github.io/stac-cog-xarray/demo/)

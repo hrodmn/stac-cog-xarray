@@ -47,6 +47,37 @@ def _run_coroutine(coro: Any) -> Any:
         return asyncio.run(coro)
 
 
+class _TimeCoordArray:
+    """Thin wrapper around a datetime64 array with a compact repr.
+
+    Stored in ``DataArray.attrs["_stac_time_coords"]`` so the xarray HTML
+    repr shows a concise ``min … max (n dates)`` summary instead of the full
+    array.
+
+    Args:
+        values: 1-D ``numpy.datetime64[D]`` array of time coordinates.
+
+    """
+
+    def __init__(self, values: np.ndarray) -> None:
+        self._values = np.asarray(values, dtype="datetime64[D]")
+
+    def __repr__(self) -> str:
+        """Return a compact min/max summary."""
+        n = len(self._values)
+        if n == 0:
+            return "TimeCoords([])"
+        if n == 1:
+            return f"TimeCoords([{self._values[0]}])"
+        return f"TimeCoords([{self._values[0]} \u2026 {self._values[-1]}], n={n})"
+
+    def __array__(self, dtype: np.dtype | None = None) -> np.ndarray:
+        """Support ``np.array()`` and ``np.asarray()`` conversions."""
+        if dtype is not None:
+            return self._values.astype(dtype)
+        return self._values
+
+
 @dataclass
 class StacBackendArray(BackendArray):
     """Lazy array for a single band of a STAC collection.
@@ -81,6 +112,9 @@ class StacBackendArray(BackendArray):
             all chunk reads.  When ``None``, each asset HREF is resolved to a
             store via the thread-local cache in
             :func:`~stac_cog_xarray._store.store_from_href`.
+        max_concurrent_reads: Maximum number of COG reads to run concurrently
+            per chunk.  Limits peak in-flight memory when a chunk overlaps
+            many items.  Defaults to 32.
 
     """
 
@@ -100,6 +134,11 @@ class StacBackendArray(BackendArray):
     shape: tuple[int, ...]
     mosaic_method_cls: type[MosaicMethodBase] | None = field(default=None)
     store: Any | None = field(default=None)
+    max_concurrent_reads: int = field(default=32)
+
+    def __repr__(self) -> str:
+        """Return a compact string representation."""
+        return f"StacBackendArray(band={self.band!r}, shape={self.shape})"
 
     def __getitem__(self, key: indexing.ExplicitIndexer) -> np.ndarray:
         """Return the data for the requested index.
@@ -270,6 +309,7 @@ class StacBackendArray(BackendArray):
                     nodata=self.nodata,
                     mosaic_method=mosaic_method,
                     store=self.store,
+                    max_concurrent_reads=self.max_concurrent_reads,
                 )
             )
             logger.debug(

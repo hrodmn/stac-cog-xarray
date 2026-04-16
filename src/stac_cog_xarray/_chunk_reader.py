@@ -236,8 +236,14 @@ async def async_mosaic_chunk(
     nodata: float | None = None,
     mosaic_method: MosaicMethodBase | None = None,
     store: ObjectStore | None = None,
+    max_concurrent_reads: int = 32,
 ) -> np.ndarray:
     """Read, reproject, and mosaic a single chunk from multiple STAC items.
+
+    Items are processed in batches of ``max_concurrent_reads`` to bound peak
+    memory usage.  When the mosaic method signals completion (e.g.
+    :class:`~stac_cog_xarray._mosaic_methods.FirstMethod` once all pixels are
+    filled), remaining batches are skipped entirely.
 
     Args:
         items: List of STAC item dicts to mosaic.  Processed in order.
@@ -252,6 +258,9 @@ async def async_mosaic_chunk(
         store: Optional pre-configured obstore ``ObjectStore`` instance
             forwarded to :func:`_read_item_band`.  When ``None``, each item's
             store is resolved from its HREF.
+        max_concurrent_reads: Maximum number of COG reads to run concurrently.
+            Limits peak in-flight memory when a chunk overlaps many items.
+            Defaults to 32.
 
     Returns:
         Array of shape ``(bands, chunk_height, chunk_width)`` with dtype
@@ -262,18 +271,19 @@ async def async_mosaic_chunk(
         mosaic_method = FirstMethod()
 
     logger.debug(
-        "async_mosaic_chunk band=%r %dx%d px, %d items",
+        "async_mosaic_chunk band=%r %dx%d px, %d items (max_concurrent_reads=%d)",
         band,
         chunk_width,
         chunk_height,
         len(items),
+        max_concurrent_reads,
     )
 
-    # Read all items concurrently.
-    t0 = time.perf_counter()
-    results = await asyncio.gather(
-        *[
-            _read_item_band(
+    semaphore = asyncio.Semaphore(max_concurrent_reads)
+
+    async def _guarded(item: dict) -> tuple[np.ndarray, float | None] | None:
+        async with semaphore:
+            return await _read_item_band(
                 item,
                 band,
                 chunk_affine,
@@ -283,44 +293,78 @@ async def async_mosaic_chunk(
                 nodata,
                 store=store,
             )
-            for item in items
-        ],
-        return_exceptions=True,
-    )
+
+    # Warn when the estimated peak in-flight memory is large. Each concurrent
+    # read holds a reprojected (chunk_height, chunk_width) array; assume 4
+    # bytes per pixel as a conservative upper bound regardless of source dtype.
+    batch = min(max_concurrent_reads, len(items))
+    estimated_peak_mb = batch * chunk_width * chunk_height * 4 / (1024**2)
+    if estimated_peak_mb > 500:
+        logger.warning(
+            "Estimated peak in-flight memory for band=%r is ~%.0f MB "
+            "(%d concurrent reads × %dx%d px). "
+            "Lower max_concurrent_reads or add spatial chunks to reduce memory use.",
+            band,
+            estimated_peak_mb,
+            batch,
+            chunk_width,
+            chunk_height,
+        )
+
+    # Process items in batches of max_concurrent_reads so that:
+    # 1. At most max_concurrent_reads arrays are held in memory at once.
+    # 2. When the mosaic method signals is_done, we skip remaining batches.
+    t0 = time.perf_counter()
+    done = False
+    items_read = 0
+    for batch_start in range(0, len(items), max_concurrent_reads):
+        batch = items[batch_start : batch_start + max_concurrent_reads]
+        batch_results = await asyncio.gather(
+            *[_guarded(item) for item in batch],
+            return_exceptions=True,
+        )
+        items_read += len(batch)
+
+        for j, result in enumerate(batch_results):
+            item_idx = batch_start + j
+            if isinstance(result, BaseException):
+                item_id = items[item_idx].get("id", "<unknown>")
+                logger.warning(
+                    "Failed to read band %r from item %s: %s",
+                    band,
+                    item_id,
+                    result,
+                    exc_info=result,
+                )
+                continue
+
+            if result is None:
+                continue
+
+            arr, effective_nodata = result
+            arr_mask: np.ndarray
+            if effective_nodata is not None:
+                arr_mask = np.all(arr == effective_nodata, axis=0, keepdims=True)
+                arr_mask = np.broadcast_to(arr_mask, arr.shape).copy()
+            else:
+                arr_mask = np.zeros(arr.shape, dtype=bool)
+
+            mosaic_method.feed(ma.MaskedArray(arr, mask=arr_mask))
+
+            if mosaic_method.is_done:
+                done = True
+                break
+
+        if done:
+            break
+
     logger.debug(
-        "asyncio.gather for %d items band=%r took %.3fs",
-        len(items),
+        "async_mosaic_chunk band=%r read %d/%d items in %.3fs",
         band,
+        items_read,
+        len(items),
         time.perf_counter() - t0,
     )
-
-    for i, result in enumerate(results):
-        if isinstance(result, BaseException):
-            item_id = items[i].get("id", "<unknown>")
-            logger.warning(
-                "Failed to read band %r from item %s: %s",
-                band,
-                item_id,
-                result,
-                exc_info=result,
-            )
-            continue
-
-        if result is None:
-            continue
-
-        arr, effective_nodata = result
-        arr_mask: np.ndarray
-        if effective_nodata is not None:
-            arr_mask = np.all(arr == effective_nodata, axis=0, keepdims=True)
-            arr_mask = np.broadcast_to(arr_mask, arr.shape).copy()
-        else:
-            arr_mask = np.zeros(arr.shape, dtype=bool)
-
-        mosaic_method.feed(ma.MaskedArray(arr, mask=arr_mask))
-
-        if mosaic_method.is_done:
-            break
 
     if mosaic_method._mosaic is None:
         bands = 1
