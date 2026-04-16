@@ -6,15 +6,15 @@ from unittest.mock import patch
 import numpy as np
 import pytest
 
-import stac_cog_xarray
-from stac_cog_xarray._core import _build_time_steps
-from stac_cog_xarray._temporal import _DayGrouper, _MonthGrouper, _FixedDayGrouper
+import lazycogs
+from lazycogs._core import _build_time_steps
+from lazycogs._temporal import _DayGrouper, _MonthGrouper, _FixedDayGrouper
 
 
 def test_open_rejects_non_parquet_href():
     """open() raises ValueError when href is not a geoparquet file."""
     with pytest.raises(ValueError, match=r"\.parquet"):
-        stac_cog_xarray.open(
+        lazycogs.open(
             "https://earth-search.aws.element84.com/v1",
             bbox=(-93.5, 44.5, -93.0, 45.0),
             crs="EPSG:4326",
@@ -25,7 +25,7 @@ def test_open_rejects_non_parquet_href():
 def test_open_rejects_json_href():
     """open() raises ValueError for non-parquet file extensions."""
     with pytest.raises(ValueError, match=r"\.parquet"):
-        stac_cog_xarray.open(
+        lazycogs.open(
             "items.json",
             bbox=(-93.5, 44.5, -93.0, 45.0),
             crs="EPSG:4326",
@@ -40,7 +40,7 @@ def test_open_accepts_parquet_extension_passes_validation(tmp_path):
     path_obj.write_bytes(b"")  # empty file — rustac will error, but not on extension
 
     with pytest.raises(Exception) as exc_info:
-        stac_cog_xarray.open(
+        lazycogs.open(
             path,
             bbox=(-93.5, 44.5, -93.0, 45.0),
             crs="EPSG:4326",
@@ -180,7 +180,7 @@ def test_build_time_steps_uses_start_datetime_fallback():
 def test_open_time_period_kwarg_wires_through():
     """time_period parameter is accepted and wires through open()."""
     with pytest.raises(ValueError, match=r"\.parquet"):
-        stac_cog_xarray.open(
+        lazycogs.open(
             "https://example.com/stac",
             bbox=(-93.5, 44.5, -93.0, 45.0),
             crs="EPSG:4326",
@@ -192,7 +192,7 @@ def test_open_time_period_kwarg_wires_through():
 def test_open_invalid_time_period_raises():
     """open() raises ValueError for an unrecognised time_period."""
     with pytest.raises(ValueError, match="Unsupported ISO 8601 duration"):
-        stac_cog_xarray.open(
+        lazycogs.open(
             "items.parquet",
             bbox=(-93.5, 44.5, -93.0, 45.0),
             crs="EPSG:4326",

@@ -2,24 +2,24 @@
 
 ## open / open_async
 
-::: stac_cog_xarray.open
+::: lazycogs.open
 
-::: stac_cog_xarray.open_async
+::: lazycogs.open_async
 
 ## Mosaic Methods
 
-::: stac_cog_xarray.MosaicMethodBase
+::: lazycogs.MosaicMethodBase
 
-::: stac_cog_xarray.FirstMethod
+::: lazycogs.FirstMethod
 
-::: stac_cog_xarray.HighestMethod
+::: lazycogs.HighestMethod
 
-::: stac_cog_xarray.LowestMethod
+::: lazycogs.LowestMethod
 
-::: stac_cog_xarray.MeanMethod
+::: lazycogs.MeanMethod
 
-::: stac_cog_xarray.MedianMethod
+::: lazycogs.MedianMethod
 
-::: stac_cog_xarray.StdevMethod
+::: lazycogs.StdevMethod
 
-::: stac_cog_xarray.CountMethod
+::: lazycogs.CountMethod

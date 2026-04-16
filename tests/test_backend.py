@@ -7,8 +7,8 @@ import pytest
 from affine import Affine
 from pyproj import CRS
 
-from stac_cog_xarray._backend import StacBackendArray
-from stac_cog_xarray._mosaic_methods import FirstMethod
+from lazycogs._backend import StacBackendArray
+from lazycogs._mosaic_methods import FirstMethod
 
 
 @pytest.fixture
@@ -100,7 +100,7 @@ def test_raw_getitem_empty_items_returns_nodata(wgs84):
     """When DuckDB returns no items, the chunk is filled with nodata."""
     arr = _make_array(wgs84)
 
-    with patch("stac_cog_xarray._backend.rustac.search_sync", return_value=[]):
+    with patch("lazycogs._backend.rustac.search_sync", return_value=[]):
         result = arr._raw_getitem((slice(0, 2), slice(0, 1), slice(0, 4)))
 
     assert result.shape == (2, 1, 4)
@@ -111,7 +111,7 @@ def test_raw_getitem_scalar_time_squeezes(wgs84):
     """Integer time index squeezes the time dimension from the output."""
     arr = _make_array(wgs84)
 
-    with patch("stac_cog_xarray._backend.rustac.search_sync", return_value=[]):
+    with patch("lazycogs._backend.rustac.search_sync", return_value=[]):
         result = arr._raw_getitem((0, slice(0, 1), slice(0, 4)))
 
     assert result.shape == (1, 4)
@@ -129,10 +129,8 @@ def test_raw_getitem_with_items_calls_mosaic(wgs84):
         return fake_chunk
 
     with (
-        patch("stac_cog_xarray._backend.rustac.search_sync", return_value=fake_items),
-        patch(
-            "stac_cog_xarray._backend.asyncio.run", side_effect=_close_and_return_chunk
-        ),
+        patch("lazycogs._backend.rustac.search_sync", return_value=fake_items),
+        patch("lazycogs._backend.asyncio.run", side_effect=_close_and_return_chunk),
     ):
         result = arr._raw_getitem((0, slice(0, 1), slice(0, 4)))
 
@@ -157,9 +155,9 @@ def test_raw_getitem_chunk_affine_offset(wgs84):
 
     fake_items = [{"id": "x"}]
     with (
-        patch("stac_cog_xarray._backend.rustac.search_sync", return_value=fake_items),
+        patch("lazycogs._backend.rustac.search_sync", return_value=fake_items),
         patch(
-            "stac_cog_xarray._backend.asyncio.run",
+            "lazycogs._backend.asyncio.run",
             side_effect=_close_and_return,
         ),
     ):

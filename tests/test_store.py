@@ -2,7 +2,7 @@
 
 import pytest
 
-from stac_cog_xarray._store import store_from_href
+from lazycogs._store import store_from_href
 
 
 @pytest.mark.parametrize(

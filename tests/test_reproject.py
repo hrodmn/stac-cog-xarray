@@ -5,7 +5,7 @@ import pytest
 from affine import Affine
 from pyproj import CRS
 
-from stac_cog_xarray._reproject import reproject_array
+from lazycogs._reproject import reproject_array
 
 
 @pytest.fixture

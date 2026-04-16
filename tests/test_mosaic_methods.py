@@ -4,7 +4,7 @@ import numpy as np
 import numpy.ma as ma
 import pytest
 
-from stac_cog_xarray._mosaic_methods import (
+from lazycogs._mosaic_methods import (
     CountMethod,
     FirstMethod,
     HighestMethod,

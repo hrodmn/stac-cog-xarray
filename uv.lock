@@ -1166,6 +1166,62 @@ wheels = [
 ]
 
 [[package]]
+name = "lazycogs"
+version = "0.1.0"
+source = { editable = "." }
+dependencies = [
+    { name = "async-geotiff" },
+    { name = "numpy" },
+    { name = "obstore" },
+    { name = "pyproj" },
+    { name = "rustac" },
+    { name = "xarray" },
+]
+
+[package.optional-dependencies]
+dask = [
+    { name = "dask" },
+]
+
+[package.dev-dependencies]
+dev = [
+    { name = "jupyter" },
+    { name = "lab" },
+    { name = "lazycogs", extra = ["dask"] },
+    { name = "pytest" },
+]
+docs = [
+    { name = "mkdocs-jupyter" },
+    { name = "mkdocs-material" },
+    { name = "mkdocstrings", extra = ["python"] },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "async-geotiff", specifier = ">=0.4.0" },
+    { name = "dask", marker = "extra == 'dask'", specifier = ">=2026.3.0" },
+    { name = "numpy", specifier = ">=2.4.4" },
+    { name = "obstore", specifier = ">=0.9.2" },
+    { name = "pyproj", specifier = ">=3.7.2" },
+    { name = "rustac", specifier = ">=0.9.9" },
+    { name = "xarray", specifier = ">=2026.2.0" },
+]
+provides-extras = ["dask"]
+
+[package.metadata.requires-dev]
+dev = [
+    { name = "jupyter", specifier = ">=1.1.1" },
+    { name = "lab", specifier = ">=8.9" },
+    { name = "lazycogs", extras = ["dask"] },
+    { name = "pytest", specifier = ">=9.0.3" },
+]
+docs = [
+    { name = "mkdocs-jupyter", specifier = ">=0.26.2" },
+    { name = "mkdocs-material", specifier = ">=9.7.6" },
+    { name = "mkdocstrings", extras = ["python"], specifier = ">=1.0.3" },
+]
+
+[[package]]
 name = "locket"
 version = "1.0.0"
 source = { registry = "https://pypi.org/simple" }
@@ -2469,62 +2525,6 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/7b/ae/2d9c981590ed9999a0d91755b47fc74f74de286b0f5cee14c9269041e6c4/soupsieve-2.8.3.tar.gz", hash = "sha256:3267f1eeea4251fb42728b6dfb746edc9acaffc4a45b27e19450b676586e8349", size = 118627, upload-time = "2026-01-20T04:27:02.457Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/46/2c/1462b1d0a634697ae9e55b3cecdcb64788e8b7d63f54d923fcd0bb140aed/soupsieve-2.8.3-py3-none-any.whl", hash = "sha256:ed64f2ba4eebeab06cc4962affce381647455978ffc1e36bb79a545b91f45a95", size = 37016, upload-time = "2026-01-20T04:27:01.012Z" },
-]
-
-[[package]]
-name = "stac-cog-xarray"
-version = "0.1.0"
-source = { editable = "." }
-dependencies = [
-    { name = "async-geotiff" },
-    { name = "numpy" },
-    { name = "obstore" },
-    { name = "pyproj" },
-    { name = "rustac" },
-    { name = "xarray" },
-]
-
-[package.optional-dependencies]
-dask = [
-    { name = "dask" },
-]
-
-[package.dev-dependencies]
-dev = [
-    { name = "jupyter" },
-    { name = "lab" },
-    { name = "pytest" },
-    { name = "stac-cog-xarray", extra = ["dask"] },
-]
-docs = [
-    { name = "mkdocs-jupyter" },
-    { name = "mkdocs-material" },
-    { name = "mkdocstrings", extra = ["python"] },
-]
-
-[package.metadata]
-requires-dist = [
-    { name = "async-geotiff", specifier = ">=0.4.0" },
-    { name = "dask", marker = "extra == 'dask'", specifier = ">=2026.3.0" },
-    { name = "numpy", specifier = ">=2.4.4" },
-    { name = "obstore", specifier = ">=0.9.2" },
-    { name = "pyproj", specifier = ">=3.7.2" },
-    { name = "rustac", specifier = ">=0.9.9" },
-    { name = "xarray", specifier = ">=2026.2.0" },
-]
-provides-extras = ["dask"]
-
-[package.metadata.requires-dev]
-dev = [
-    { name = "jupyter", specifier = ">=1.1.1" },
-    { name = "lab", specifier = ">=8.9" },
-    { name = "pytest", specifier = ">=9.0.3" },
-    { name = "stac-cog-xarray", extras = ["dask"] },
-]
-docs = [
-    { name = "mkdocs-jupyter", specifier = ">=0.26.2" },
-    { name = "mkdocs-material", specifier = ">=9.7.6" },
-    { name = "mkdocstrings", extras = ["python"], specifier = ">=1.0.3" },
 ]
 
 [[package]]

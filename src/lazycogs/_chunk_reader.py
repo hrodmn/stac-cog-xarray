@@ -13,9 +13,9 @@ from affine import Affine
 from async_geotiff import GeoTIFF, Overview, Window
 from pyproj import CRS, Transformer
 
-from stac_cog_xarray._mosaic_methods import FirstMethod, MosaicMethodBase
-from stac_cog_xarray._reproject import reproject_array
-from stac_cog_xarray._store import path_from_href, store_from_href
+from lazycogs._mosaic_methods import FirstMethod, MosaicMethodBase
+from lazycogs._reproject import reproject_array
+from lazycogs._store import path_from_href, store_from_href
 
 if TYPE_CHECKING:
     from obstore.store import ObjectStore
@@ -122,7 +122,7 @@ async def _read_item_band(
         store: Optional pre-configured obstore ``ObjectStore`` instance.
             When provided, it is used directly and the path is extracted from
             the asset HREF (path component only).  When ``None``, the store
-            is resolved and cached via :func:`~stac_cog_xarray._store.store_from_href`.
+            is resolved and cached via :func:`~lazycogs._store.store_from_href`.
 
     Returns:
         A tuple of ``(array, effective_nodata)`` where *array* has shape
@@ -242,7 +242,7 @@ async def async_mosaic_chunk(
 
     Items are processed in batches of ``max_concurrent_reads`` to bound peak
     memory usage.  When the mosaic method signals completion (e.g.
-    :class:`~stac_cog_xarray._mosaic_methods.FirstMethod` once all pixels are
+    :class:`~lazycogs._mosaic_methods.FirstMethod` once all pixels are
     filled), remaining batches are skipped entirely.
 
     Args:
@@ -254,7 +254,7 @@ async def async_mosaic_chunk(
         chunk_height: Height of the destination chunk in pixels.
         nodata: No-data fill value.
         mosaic_method: Pixel-selection strategy.  Defaults to
-            :class:`~stac_cog_xarray._mosaic_methods.FirstMethod`.
+            :class:`~lazycogs._mosaic_methods.FirstMethod`.
         store: Optional pre-configured obstore ``ObjectStore`` instance
             forwarded to :func:`_read_item_band`.  When ``None``, each item's
             store is resolved from its HREF.

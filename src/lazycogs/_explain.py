@@ -15,8 +15,8 @@ from pyproj import CRS, Transformer
 
 import rustac
 
-from stac_cog_xarray._backend import StacBackendArray, _run_coroutine
-from stac_cog_xarray._chunk_reader import _native_window, _select_overview
+from lazycogs._backend import StacBackendArray, _run_coroutine
+from lazycogs._chunk_reader import _native_window, _select_overview
 
 if TYPE_CHECKING:
     from obstore.store import ObjectStore
@@ -97,7 +97,7 @@ class ChunkRead:
 
 @dataclass
 class ExplainPlan:
-    """Complete dry-run read plan for a stac-cog-xarray query.
+    """Complete dry-run read plan for a lazycogs query.
 
     Attributes:
         href: Path to the source geoparquet file.
@@ -449,7 +449,7 @@ async def _inspect_item_async(
     """
     from async_geotiff import GeoTIFF
 
-    from stac_cog_xarray._store import path_from_href, store_from_href
+    from lazycogs._store import path_from_href, store_from_href
 
     asset = item.get("assets", {}).get(band)
     if asset is None:
@@ -671,13 +671,13 @@ async def _explain_async(
 # ---------------------------------------------------------------------------
 
 
-@xr.register_dataarray_accessor("stac_cog")
+@xr.register_dataarray_accessor("lazycogs")
 class StacCogAccessor:
-    """xarray accessor adding explain functionality to stac-cog-xarray DataArrays.
+    """xarray accessor adding explain functionality to lazycogs DataArrays.
 
     Registered as the ``stac_cog`` namespace on all ``xr.DataArray`` objects.
     The :meth:`explain` method is only useful on DataArrays produced by
-    :func:`stac_cog_xarray.open` or :func:`stac_cog_xarray.open_async`.
+    :func:`lazycogs.open` or :func:`lazycogs.open_async`.
 
     """
 
@@ -710,7 +710,7 @@ class StacCogAccessor:
 
         Raises:
             ValueError: If the DataArray was not produced by
-                ``stac_cog_xarray.open()`` (missing explain metadata in
+                ``lazycogs.open()`` (missing explain metadata in
                 ``attrs``).
 
         """
@@ -718,7 +718,7 @@ class StacCogAccessor:
         if backends is None:
             raise ValueError(
                 "This DataArray does not have stac_cog explain metadata. "
-                "Ensure it was created by stac_cog_xarray.open() or "
-                "stac_cog_xarray.open_async()."
+                "Ensure it was created by lazycogs.open() or "
+                "lazycogs.open_async()."
             )
         return _run_coroutine(_explain_async(self._da, backends, fetch_headers))

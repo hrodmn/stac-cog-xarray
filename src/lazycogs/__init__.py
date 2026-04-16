@@ -1,13 +1,13 @@
-"""stac-cog-xarray: lazy xarray DataArrays from STAC COG collections."""
+"""lazycogs: lazy xarray DataArrays from STAC COG collections."""
 
-from stac_cog_xarray._core import open, open_async
-from stac_cog_xarray._explain import (  # noqa: F401 — registers da.stac_cog accessor
+from lazycogs._core import open, open_async
+from lazycogs._explain import (  # noqa: F401 — registers da.stac_cog accessor
     ChunkRead,
     ExplainPlan,
     CogRead,
     StacCogAccessor,
 )
-from stac_cog_xarray._mosaic_methods import (
+from lazycogs._mosaic_methods import (
     CountMethod,
     FirstMethod,
     HighestMethod,

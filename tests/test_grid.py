@@ -4,7 +4,7 @@ import numpy as np
 import pytest
 from pyproj import CRS
 
-from stac_cog_xarray._grid import compute_output_grid
+from lazycogs._grid import compute_output_grid
 
 
 @pytest.fixture

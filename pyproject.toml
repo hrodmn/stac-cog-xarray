@@ -1,5 +1,5 @@
 [project]
-name = "stac-cog-xarray"
+name = "lazycogs"
 version = "0.1.0"
 description = "Lazily load COG assets from STAC items into xarray DataArrays using async-geotiff"
 readme = "README.md"
@@ -16,9 +16,6 @@ dependencies = [
     "xarray>=2026.2.0",
 ]
 
-[project.scripts]
-stac-cog-xarray = "stac_cog_xarray:main"
-
 [project.optional-dependencies]
 dask = [
     "dask>=2026.3.0",
@@ -30,7 +27,7 @@ build-backend = "uv_build"
 
 [dependency-groups]
 dev = [
-    "stac-cog-xarray[dask]",
+    "lazycogs[dask]",
     "jupyter>=1.1.1",
     "lab>=8.9",
     "pytest>=9.0.3",

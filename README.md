@@ -1,4 +1,4 @@
-# stac-cog-xarray
+# lazycogs
 
 Open a geoparquet STAC item collection as a lazy `(time, band, y, x)` xarray DataArray backed by Cloud Optimized GeoTIFFs. No GDAL required.
 
@@ -21,14 +21,14 @@ This package replaces GDAL with a set of modern, Rust-backed libraries that ship
 Not yet published to PyPI. Install directly from GitHub:
 
 ```bash
-pip install git+https://github.com/hrodmn/stac-cog-xarray.git
+pip install git+https://github.com/hrodmn/lazycogs.git
 ```
 
 ## Quickstart
 
 ```python
 import rustac
-import stac_cog_xarray
+import lazycogs
 
 # Search a STAC API and write results to a local geoparquet file
 rustac.search_to(
@@ -40,7 +40,7 @@ rustac.search_to(
 )
 
 # Open the parquet file as a lazy (time, band, y, x) DataArray
-da = stac_cog_xarray.open(
+da = lazycogs.open(
     "items.parquet",
     bbox=(380000.0, 4928000.0, 420000.0, 4984000.0),
     crs="EPSG:32615",
@@ -53,7 +53,7 @@ da = stac_cog_xarray.open(
 # (non-nodata) value, skipping remaining items in the week once all pixels
 # are filled. This is more efficient than post-hoc ffill or reductions over
 # a daily array, which would materialise every time step before reducing.
-da_weekly = stac_cog_xarray.open(
+da_weekly = lazycogs.open(
     "items.parquet",
     bbox=(380000.0, 4928000.0, 420000.0, 4984000.0),
     crs="EPSG:32615",
@@ -65,11 +65,11 @@ da_weekly = stac_cog_xarray.open(
 ## Inspecting read plans
 
 Before computing an array, you can ask what DuckDB queries and COG reads would
-fire without touching any pixel data. The `da.stac_cog.explain()` method runs
+fire without touching any pixel data. The `da.lazycogs.explain()` method runs
 the same spatial queries as `.compute()` but stops before any I/O:
 
 ```python
-da = stac_cog_xarray.open(
+da = lazycogs.open(
     "items.parquet",
     bbox=(380000.0, 4928000.0, 420000.0, 4984000.0),
     crs="EPSG:32615",
@@ -78,18 +78,18 @@ da = stac_cog_xarray.open(
 )
 
 # Inspect without reading pixels
-plan = da.stac_cog.explain()
+plan = da.lazycogs.explain()
 print(plan.summary())
 
 # Explain a specific slice
-plan_subset = da.isel(time=0).stac_cog.explain()
+plan_subset = da.isel(time=0).lazycogs.explain()
 
 # Convert to a DataFrame for analysis
 df = plan.to_dataframe()
 df.groupby("band")["n_cog_reads"].describe()
 
 # Fetch COG headers to see which overview level and pixel window would be read
-plan_full = da.stac_cog.explain(fetch_headers=True)
+plan_full = da.lazycogs.explain(fetch_headers=True)
 ```
 
 The `ExplainPlan` returned shows how many items are matched per chunk, the
@@ -98,6 +98,6 @@ and the empty-chunk fraction (useful for diagnosing sparse time series).
 
 ## Documentation
 
-- [Demo notebook](https://hrodmn.github.io/stac-cog-xarray/demo/)
-- [Architecture](https://hrodmn.github.io/stac-cog-xarray/architecture/)
-- [API Reference](https://hrodmn.github.io/stac-cog-xarray/api/)
+- [Demo notebook](https://hrodmn.github.io/lazycogs/demo/)
+- [Architecture](https://hrodmn.github.io/lazycogs/architecture/)
+- [API Reference](https://hrodmn.github.io/lazycogs/api/)

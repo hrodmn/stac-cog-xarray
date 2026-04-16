@@ -1,4 +1,4 @@
-"""Tests for the stac_cog_xarray._explain module."""
+"""Tests for the lazycogs._explain module."""
 
 from __future__ import annotations
 
@@ -10,8 +10,8 @@ import xarray as xr
 from affine import Affine
 from pyproj import CRS
 
-from stac_cog_xarray._backend import StacBackendArray
-from stac_cog_xarray._explain import (
+from lazycogs._backend import StacBackendArray
+from lazycogs._explain import (
     ChunkRead,
     CogRead,
     ExplainPlan,
@@ -20,7 +20,7 @@ from stac_cog_xarray._explain import (
     _iter_spatial_chunks,
     _roi_pixel_offsets,
 )
-from stac_cog_xarray._mosaic_methods import FirstMethod
+from lazycogs._mosaic_methods import FirstMethod
 
 
 # ---------------------------------------------------------------------------
@@ -415,8 +415,8 @@ def _fake_items(band: str, n: int) -> list[dict]:
 def test_accessor_raises_on_non_stac_da():
     """explain() raises ValueError when the DataArray has no explain metadata."""
     da = xr.DataArray(np.zeros((3, 3)))
-    with pytest.raises(ValueError, match="stac_cog_xarray.open"):
-        da.stac_cog.explain()
+    with pytest.raises(ValueError, match="lazycogs.open"):
+        da.lazycogs.explain()
 
 
 def test_accessor_explain_returns_plan(wgs84):
@@ -432,9 +432,9 @@ def test_accessor_explain_returns_plan(wgs84):
         height=4,
     )
 
-    with patch("stac_cog_xarray._explain.rustac.search_sync") as mock_search:
+    with patch("lazycogs._explain.rustac.search_sync") as mock_search:
         mock_search.return_value = _fake_items("red", 2)
-        plan = da.stac_cog.explain()
+        plan = da.lazycogs.explain()
 
     # 1 band * 2 time steps * 1 spatial tile (no chunking) = 2 chunk reads
     assert plan.total_chunk_reads == 2
@@ -456,9 +456,9 @@ def test_accessor_explain_empty_results(wgs84):
         height=4,
     )
 
-    with patch("stac_cog_xarray._explain.rustac.search_sync") as mock_search:
+    with patch("lazycogs._explain.rustac.search_sync") as mock_search:
         mock_search.return_value = []
-        plan = da.stac_cog.explain()
+        plan = da.lazycogs.explain()
 
     assert plan.total_chunk_reads == 1
     assert plan.total_cog_reads == 0
@@ -479,9 +479,9 @@ def test_accessor_explain_with_dask_chunks(wgs84):
     )
     da = da.chunk({"y": 4, "x": 4})
 
-    with patch("stac_cog_xarray._explain.rustac.search_sync") as mock_search:
+    with patch("lazycogs._explain.rustac.search_sync") as mock_search:
         mock_search.return_value = []
-        plan = da.stac_cog.explain()
+        plan = da.lazycogs.explain()
 
     # 1 band * 1 time * 4 spatial tiles (2x2 grid from 8px / 4px chunks)
     assert plan.total_chunk_reads == 4
@@ -502,9 +502,9 @@ def test_accessor_explain_multiple_bands(wgs84):
         height=4,
     )
 
-    with patch("stac_cog_xarray._explain.rustac.search_sync") as mock_search:
+    with patch("lazycogs._explain.rustac.search_sync") as mock_search:
         mock_search.return_value = _fake_items("red", 1)
-        plan = da.stac_cog.explain()
+        plan = da.lazycogs.explain()
 
     # 3 bands * 1 time * 1 spatial tile = 3 chunk reads
     assert plan.total_chunk_reads == 3
@@ -525,9 +525,9 @@ def test_accessor_explain_band_slice(wgs84):
     )
     da_red = da.sel(band="red")
 
-    with patch("stac_cog_xarray._explain.rustac.search_sync") as mock_search:
+    with patch("lazycogs._explain.rustac.search_sync") as mock_search:
         mock_search.return_value = []
-        plan = da_red.stac_cog.explain()
+        plan = da_red.lazycogs.explain()
 
     assert plan.bands == ["red"]
     assert plan.total_chunk_reads == 1  # only 1 band
@@ -551,9 +551,9 @@ def test_accessor_explain_time_slice(wgs84):
     )
     da_sliced = da.isel(time=slice(0, 2))  # first 2 time steps
 
-    with patch("stac_cog_xarray._explain.rustac.search_sync") as mock_search:
+    with patch("lazycogs._explain.rustac.search_sync") as mock_search:
         mock_search.return_value = []
-        plan = da_sliced.stac_cog.explain()
+        plan = da_sliced.lazycogs.explain()
 
     assert len(plan.time_coords) == 2
     assert plan.total_chunk_reads == 2  # 1 band * 2 time steps * 1 spatial tile

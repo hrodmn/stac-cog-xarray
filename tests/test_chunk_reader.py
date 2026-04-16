@@ -9,12 +9,12 @@ import numpy as np
 from affine import Affine
 from pyproj import CRS
 
-from stac_cog_xarray._chunk_reader import (
+from lazycogs._chunk_reader import (
     _native_window,
     _select_overview,
     async_mosaic_chunk,
 )
-from stac_cog_xarray._mosaic_methods import FirstMethod
+from lazycogs._mosaic_methods import FirstMethod
 
 
 # ---------------------------------------------------------------------------
@@ -169,7 +169,7 @@ def test_async_mosaic_chunk_limits_concurrent_reads():
     items = [{"id": f"item-{i}", "assets": {}} for i in range(n_items)]
 
     with patch(
-        "stac_cog_xarray._chunk_reader._read_item_band",
+        "lazycogs._chunk_reader._read_item_band",
         side_effect=_fake_read_item_band,
     ):
         asyncio.run(
@@ -207,7 +207,7 @@ def test_async_mosaic_chunk_early_exit_skips_remaining_reads():
     items = [{"id": f"item-{i}", "assets": {}} for i in range(n_items)]
 
     with patch(
-        "stac_cog_xarray._chunk_reader._read_item_band",
+        "lazycogs._chunk_reader._read_item_band",
         side_effect=_fake_read_item_band,
     ):
         asyncio.run(

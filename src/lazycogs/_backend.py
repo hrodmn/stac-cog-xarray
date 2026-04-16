@@ -17,8 +17,8 @@ from xarray.core import indexing
 
 import rustac
 
-from stac_cog_xarray._chunk_reader import async_mosaic_chunk
-from stac_cog_xarray._mosaic_methods import MosaicMethodBase
+from lazycogs._chunk_reader import async_mosaic_chunk
+from lazycogs._mosaic_methods import MosaicMethodBase
 
 logger = logging.getLogger(__name__)
 
@@ -107,11 +107,11 @@ class StacBackendArray(BackendArray):
         shape: ``(n_dates, dst_height, dst_width)``.
         mosaic_method_cls: Mosaic method class instantiated per chunk, or
             ``None`` to use the default
-            :class:`~stac_cog_xarray._mosaic_methods.FirstMethod`.
+            :class:`~lazycogs._mosaic_methods.FirstMethod`.
         store: Pre-configured obstore ``ObjectStore`` instance shared across
             all chunk reads.  When ``None``, each asset HREF is resolved to a
             store via the thread-local cache in
-            :func:`~stac_cog_xarray._store.store_from_href`.
+            :func:`~lazycogs._store.store_from_href`.
         max_concurrent_reads: Maximum number of COG reads to run concurrently
             per chunk.  Limits peak in-flight memory when a chunk overlaps
             many items.  Defaults to 32.

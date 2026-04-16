@@ -1,6 +1,6 @@
-# Architecture: stac-cog-xarray
+# Architecture: lazycogs
 
-stac-cog-xarray turns a geoparquet STAC item index into a lazy `(time, band, y, x)` xarray DataArray backed by Cloud-Optimized GeoTIFFs. It requires no GDAL. All raster I/O is done through `async-geotiff` (Rust-backed), spatial queries go through DuckDB via `rustac`, and reprojection is pure `pyproj` + numpy.
+lazycogs turns a geoparquet STAC item index into a lazy `(time, band, y, x)` xarray DataArray backed by Cloud-Optimized GeoTIFFs. It requires no GDAL. All raster I/O is done through `async-geotiff` (Rust-backed), spatial queries go through DuckDB via `rustac`, and reprojection is pure `pyproj` + numpy.
 
 ## Why parquet, not a STAC API URL
 
@@ -21,11 +21,11 @@ This split means that `open()` is nearly instant even for large queries, and the
 ## Module overview
 
 ```
-src/stac_cog_xarray/
+src/lazycogs/
   _core.py           Entry point. open() / open_async(), band discovery, time-step building.
   _backend.py        StacBackendArray (per-band) and MultiBandStacBackendArray (4-D wrapper) — xarray BackendArray implementations that bridge xarray indexing to chunk reads.
   _chunk_reader.py   Async mosaic logic: open COGs, select overviews, read windows, reproject, mosaic.
-  _explain.py        Dry-run read estimator. Registers the da.stac_cog.explain() xarray accessor.
+  _explain.py        Dry-run read estimator. Registers the da.lazycogs.explain() xarray accessor.
   _grid.py           Compute output affine transform and coordinate arrays from bbox + resolution.
   _reproject.py      Nearest-neighbor reprojection using pyproj Transformer + numpy fancy indexing.
   _store.py          Parse cloud HREFs into thread-local obstore Store instances; extract object paths when a store is provided externally.
@@ -46,22 +46,22 @@ src/stac_cog_xarray/
 7. For each band, creates a `StacBackendArray` (a dataclass) holding all the parameters needed to materialise any chunk later.
 8. Wraps all per-band arrays in a single `MultiBandStacBackendArray` with shape `(band, time, y, x)`, then wraps that in one `xarray.core.indexing.LazilyIndexedArray`. This avoids `xr.concat` (used internally by `ds.to_array()`), which would eagerly load `LazilyIndexedArray`-backed objects.
 9. Constructs the `xr.DataArray` directly from the 4-D variable. If `chunks` is provided, calls `.chunk(chunks)` to convert to a dask-backed array; otherwise the `LazilyIndexedArray` remains in play so narrow slices (e.g. a single pixel) translate to minimal I/O.
-10. Stores `_stac_backends` (the list of `StacBackendArray` instances) and `_stac_time_coords` (the full time coordinate array) in `da.attrs` so that `da.stac_cog.explain()` can reconstruct the explain plan without re-specifying `open()` parameters.
+10. Stores `_stac_backends` (the list of `StacBackendArray` instances) and `_stac_time_coords` (the full time coordinate array) in `da.attrs` so that `da.lazycogs.explain()` can reconstruct the explain plan without re-specifying `open()` parameters.
 
 `open()` is a thin synchronous wrapper that calls `asyncio.run(open_async(...))`.
 
 ## Explain: dry-run read estimator
 
-`da.stac_cog.explain()` (registered in `_explain.py` as an xarray accessor) provides an `EXPLAIN ANALYZE`-style dry run. It runs the same DuckDB spatial queries that fire during `.compute()` — one per `(band, time step, spatial chunk)` combination — but stops before any pixel I/O.
+`da.lazycogs.explain()` (registered in `_explain.py` as an xarray accessor) provides an `EXPLAIN ANALYZE`-style dry run. It runs the same DuckDB spatial queries that fire during `.compute()` — one per `(band, time step, spatial chunk)` combination — but stops before any pixel I/O.
 
 ```python
-plan = da.stac_cog.explain()          # DuckDB queries only, no pixel reads
-plan = da.stac_cog.explain(fetch_headers=True)  # also reads COG IFD headers
+plan = da.lazycogs.explain()          # DuckDB queries only, no pixel reads
+plan = da.lazycogs.explain(fetch_headers=True)  # also reads COG IFD headers
 print(plan.summary())
 df = plan.to_dataframe()
 ```
 
-The accessor reads `_stac_backends` and `_stac_time_coords` from `da.attrs` and respects the DataArray's current extent and chunk sizes, so explaining a sliced DataArray (`da.isel(time=0).stac_cog.explain()`) queries only the reads needed for that slice.
+The accessor reads `_stac_backends` and `_stac_time_coords` from `da.attrs` and respects the DataArray's current extent and chunk sizes, so explaining a sliced DataArray (`da.isel(time=0).lazycogs.explain()`) queries only the reads needed for that slice.
 
 `ExplainPlan` exposes:
 - `total_chunk_reads` — number of `(band, time, spatial tile)` combinations
@@ -238,7 +238,7 @@ Note that mosaic methods operate on nodata masks only; they have no awareness
 of semantic content like clouds. Pixels that are not masked as nodata in the
 source COG will be treated as valid regardless of what they represent. If
 cloud masking is desired, it must be applied to the source data before
-stac-cog-xarray reads it (for example, by using scene-level cloud-mask bands
+lazycogs reads it (for example, by using scene-level cloud-mask bands
 to set nodata at the COG level).
 
 This approach is substantially more efficient than applying temporal reductions

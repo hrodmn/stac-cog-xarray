@@ -13,14 +13,14 @@ import xarray as xr
 from pyproj import CRS, Transformer
 from xarray.core import indexing
 
-from stac_cog_xarray._backend import (
+from lazycogs._backend import (
     MultiBandStacBackendArray,
     StacBackendArray,
     _TimeCoordArray,
 )
-from stac_cog_xarray._grid import compute_output_grid
-from stac_cog_xarray._mosaic_methods import FirstMethod, MosaicMethodBase
-from stac_cog_xarray._temporal import _TemporalGrouper, grouper_from_period
+from lazycogs._grid import compute_output_grid
+from lazycogs._mosaic_methods import FirstMethod, MosaicMethodBase
+from lazycogs._temporal import _TemporalGrouper, grouper_from_period
 
 logger = logging.getLogger(__name__)
 
@@ -164,7 +164,7 @@ def _build_dataarray(
         resolved_bands: Ordered list of band/asset keys.
         filter_strings: Sorted list of ``rustac``-compatible datetime filter
             strings, one per time step.  Passed directly to
-            :class:`~stac_cog_xarray._backend.StacBackendArray`.
+            :class:`~lazycogs._backend.StacBackendArray`.
         time_coords: ``numpy.datetime64[D]`` coordinate values corresponding
             to each entry in *filter_strings*.
         bbox: Output bounding box in ``dst_crs``.
@@ -183,7 +183,7 @@ def _build_dataarray(
             resolving a store from each HREF.
         max_concurrent_reads: Maximum number of COG reads to run concurrently
             per chunk.  Passed to each
-            :class:`~stac_cog_xarray._backend.StacBackendArray`.
+            :class:`~lazycogs._backend.StacBackendArray`.
 
     Returns:
         Lazy ``xr.DataArray`` with dimensions ``(time, band, y, x)``.
@@ -242,7 +242,7 @@ def _build_dataarray(
             "x": x_coords,
         },
     )
-    # Store explain metadata so that da.stac_cog.explain() can reconstruct
+    # Store explain metadata so that da.lazycogs.explain() can reconstruct
     # which DuckDB queries to run without re-specifying all open() parameters.
     # Wrap time_coord so the xarray HTML repr shows a compact min/max summary.
     da.attrs["_stac_backends"] = band_arrays
@@ -313,7 +313,7 @@ async def open_async(  # noqa: A001
         nodata: No-data fill value for output arrays.
         dtype: Output array dtype.  Defaults to ``float32``.
         mosaic_method: Mosaic method class (not instance) to use.  Defaults
-            to :class:`~stac_cog_xarray._mosaic_methods.FirstMethod`.
+            to :class:`~lazycogs._mosaic_methods.FirstMethod`.
         time_period: ISO 8601 duration string controlling how items are
             grouped into time steps.  Supported forms: ``PnD`` (days),
             ``P1W`` (ISO calendar week), ``P1M`` (calendar month), ``P1Y``
@@ -329,7 +329,7 @@ async def open_async(  # noqa: A001
             per chunk.  Items are processed in batches of this size, which
             bounds peak in-flight memory when a chunk overlaps many files.
             Methods that support early exit (e.g. the default
-            :class:`~stac_cog_xarray._mosaic_methods.FirstMethod`) will stop
+            :class:`~lazycogs._mosaic_methods.FirstMethod`) will stop
             reading once every output pixel is filled, so lower values also
             reduce unnecessary I/O on dense datasets.  Defaults to 32.
 
@@ -485,7 +485,7 @@ def open(  # noqa: A001
         nodata: No-data fill value for output arrays.
         dtype: Output array dtype.  Defaults to ``float32``.
         mosaic_method: Mosaic method class (not instance) to use.  Defaults
-            to :class:`~stac_cog_xarray._mosaic_methods.FirstMethod`.
+            to :class:`~lazycogs._mosaic_methods.FirstMethod`.
         time_period: ISO 8601 duration string controlling how items are
             grouped into time steps.  Supported forms: ``PnD`` (days),
             ``P1W`` (ISO calendar week), ``P1M`` (calendar month), ``P1Y``

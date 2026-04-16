@@ -7,7 +7,7 @@ from datetime import date
 import numpy as np
 import pytest
 
-from stac_cog_xarray._temporal import (
+from lazycogs._temporal import (
     _DayGrouper,
     _FixedDayGrouper,
     _MonthGrouper,

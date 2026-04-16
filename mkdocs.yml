@@ -1,7 +1,7 @@
-site_name: stac-cog-xarray
-site_url: https://hrodmn.github.io/stac-cog-xarray/
-repo_url: https://github.com/hrodmn/stac-cog-xarray
-repo_name: hrodmn/stac-cog-xarray
+site_name: lazycogs
+site_url: https://hrodmn.github.io/lazycogs/
+repo_url: https://github.com/hrodmn/lazycogs
+repo_name: hrodmn/lazycogs
 
 theme:
   name: material
