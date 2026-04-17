@@ -14,7 +14,7 @@
         <link rel="prev" href="../demo/">
       
       
-        <link rel="next" href="../api/">
+        <link rel="next" href="../lazycogs-odc-stac/">
       
       
         
@@ -235,6 +235,25 @@
     
   
   Architecture
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../lazycogs-odc-stac/" class="md-tabs__link">
+        
+  
+  
+    
+  
+  lazycogs vs odc-stac
 
       </a>
     </li>
@@ -704,6 +723,33 @@
   
   
     <li class="md-nav__item">
+      <a href="../lazycogs-odc-stac/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    lazycogs vs odc-stac
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../api/" class="md-nav__link">
         
   
@@ -1113,7 +1159,7 @@
 <li>For each item:
    a. If a <code>store</code> was supplied by the caller, <code>path_from_href(href)</code> extracts just the object path within that store. Otherwise, <code>store_from_href(href)</code> returns a thread-local <code>obstore</code> store and an object path.
    b. <code>await GeoTIFF.open(path, store=store)</code> opens the COG header.
-   c. <code>_select_overview()</code> picks the finest overview whose pixel size is at least as coarse as the target resolution.
+   c. <code>_select_overview()</code> picks the coarsest overview whose pixel size is still ≤ the target resolution.
    d. <code>_native_window()</code> computes the pixel window in source space that covers the chunk bbox, clamped to the image extent.
    e. <code>await reader.read(window=window)</code> fetches the tile data.
    f. <code>reproject_array()</code> warps the read data to the destination chunk grid.</li>
@@ -1130,7 +1176,7 @@
 <h2 id="per-chunk-read-and-resample-pipeline">Per-chunk read and resample pipeline</h2>
 <p>Each call to <code>_read_item_band()</code> in <code>_chunk_reader.py</code> follows a four-step pipeline to turn a remote COG into a correctly-sized, correctly-projected numpy array for one destination chunk.</p>
 <h3 id="1-overview-selection">1. Overview selection</h3>
-<p>Before fetching any pixels, <code>_select_overview()</code> picks the right level of the COG's built-in pyramid. The target resolution is estimated in the source image's native CRS: if <code>dst_crs</code> differs from the COG's CRS, a 1-pixel offset at the chunk centre is transformed with pyproj to approximate the pixel size in source units. The overview list (ordered finest → coarsest) is then walked to find the first overview whose pixel size is at least as large as that target. Using a coarser-than-needed overview would lose detail; using a finer one reads more bytes than necessary. If no overview is coarse enough, or no overviews exist, full-resolution is used.</p>
+<p>Before fetching any pixels, <code>_select_overview()</code> picks the right level of the COG's built-in pyramid. The target resolution is estimated in the source image's native CRS: if <code>dst_crs</code> differs from the COG's CRS, a 1-pixel offset at the chunk centre is transformed with pyproj to approximate the pixel size in source units. The overview list (ordered finest → coarsest) is walked to find the coarsest overview whose pixel size is still ≤ the target — i.e. the finest source data that avoids upsampling. This preserves as much spatial detail as the output scale warrants without reading unnecessarily fine data. If no overview satisfies the condition (target falls between native and the finest overview), or no overviews exist, full-resolution is used.</p>
 <p>This is the primary resampling control: the pyramid level is chosen to match the output resolution, so the reprojection step works on roughly the right amount of data.</p>
 <h3 id="2-source-window-computation">2. Source window computation</h3>
 <p>The destination chunk's bounding box (in <code>dst_crs</code>) is reprojected to the source CRS via pyproj. The inverse of the source affine transform maps those four corners to fractional pixel coordinates. <code>floor</code>/<code>ceil</code> and clamping to image bounds gives the <code>Window</code> that covers exactly the source pixels needed. Only that window is fetched from the COG, minimising I/O.</p>

@@ -245,6 +245,25 @@
   
   
     <li class="md-tabs__item">
+      <a href="lazycogs-odc-stac/" class="md-tabs__link">
+        
+  
+  
+    
+  
+  lazycogs vs odc-stac
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
       <a href="api/" class="md-tabs__link">
         
   
@@ -499,6 +518,33 @@
   
   
     <li class="md-nav__item">
+      <a href="lazycogs-odc-stac/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    lazycogs vs odc-stac
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="api/" class="md-nav__link">
         
   
@@ -675,7 +721,7 @@
 <a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a><span class="kn">import</span><span class="w"> </span><span class="nn">lazycogs</span>
 <a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a>
 <a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a><span class="c1"># Search a STAC API and write results to a local geoparquet file</span>
-<a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a><span class="n">rustac</span><span class="o">.</span><span class="n">search_to</span><span class="p">(</span>
+<a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a><span class="k">await</span> <span class="n">rustac</span><span class="o">.</span><span class="n">search_to</span><span class="p">(</span>
 <a id="__codelineno-1-6" name="__codelineno-1-6" href="#__codelineno-1-6"></a>    <span class="s2">&quot;items.parquet&quot;</span><span class="p">,</span>
 <a id="__codelineno-1-7" name="__codelineno-1-7" href="#__codelineno-1-7"></a>    <span class="s2">&quot;https://earth-search.aws.element84.com/v1&quot;</span><span class="p">,</span>
 <a id="__codelineno-1-8" name="__codelineno-1-8" href="#__codelineno-1-8"></a>    <span class="n">collections</span><span class="o">=</span><span class="p">[</span><span class="s2">&quot;sentinel-2-l2a&quot;</span><span class="p">],</span>
@@ -684,7 +730,7 @@
 <a id="__codelineno-1-11" name="__codelineno-1-11" href="#__codelineno-1-11"></a><span class="p">)</span>
 <a id="__codelineno-1-12" name="__codelineno-1-12" href="#__codelineno-1-12"></a>
 <a id="__codelineno-1-13" name="__codelineno-1-13" href="#__codelineno-1-13"></a><span class="c1"># Open the parquet file as a lazy (time, band, y, x) DataArray</span>
-<a id="__codelineno-1-14" name="__codelineno-1-14" href="#__codelineno-1-14"></a><span class="n">da</span> <span class="o">=</span> <span class="n">lazycogs</span><span class="o">.</span><span class="n">open</span><span class="p">(</span>
+<a id="__codelineno-1-14" name="__codelineno-1-14" href="#__codelineno-1-14"></a><span class="n">da</span> <span class="o">=</span> <span class="k">await</span> <span class="n">lazycogs</span><span class="o">.</span><span class="n">open_async</span><span class="p">(</span>
 <a id="__codelineno-1-15" name="__codelineno-1-15" href="#__codelineno-1-15"></a>    <span class="s2">&quot;items.parquet&quot;</span><span class="p">,</span>
 <a id="__codelineno-1-16" name="__codelineno-1-16" href="#__codelineno-1-16"></a>    <span class="n">bbox</span><span class="o">=</span><span class="p">(</span><span class="mf">380000.0</span><span class="p">,</span> <span class="mf">4928000.0</span><span class="p">,</span> <span class="mf">420000.0</span><span class="p">,</span> <span class="mf">4984000.0</span><span class="p">),</span>
 <a id="__codelineno-1-17" name="__codelineno-1-17" href="#__codelineno-1-17"></a>    <span class="n">crs</span><span class="o">=</span><span class="s2">&quot;EPSG:32615&quot;</span><span class="p">,</span>
@@ -697,7 +743,7 @@
 <a id="__codelineno-1-24" name="__codelineno-1-24" href="#__codelineno-1-24"></a><span class="c1"># (non-nodata) value, skipping remaining items in the week once all pixels</span>
 <a id="__codelineno-1-25" name="__codelineno-1-25" href="#__codelineno-1-25"></a><span class="c1"># are filled. This is more efficient than post-hoc ffill or reductions over</span>
 <a id="__codelineno-1-26" name="__codelineno-1-26" href="#__codelineno-1-26"></a><span class="c1"># a daily array, which would materialise every time step before reducing.</span>
-<a id="__codelineno-1-27" name="__codelineno-1-27" href="#__codelineno-1-27"></a><span class="n">da_weekly</span> <span class="o">=</span> <span class="n">lazycogs</span><span class="o">.</span><span class="n">open</span><span class="p">(</span>
+<a id="__codelineno-1-27" name="__codelineno-1-27" href="#__codelineno-1-27"></a><span class="n">da_weekly</span> <span class="o">=</span> <span class="k">await</span> <span class="n">lazycogs</span><span class="o">.</span><span class="n">open_async</span><span class="p">(</span>
 <a id="__codelineno-1-28" name="__codelineno-1-28" href="#__codelineno-1-28"></a>    <span class="s2">&quot;items.parquet&quot;</span><span class="p">,</span>
 <a id="__codelineno-1-29" name="__codelineno-1-29" href="#__codelineno-1-29"></a>    <span class="n">bbox</span><span class="o">=</span><span class="p">(</span><span class="mf">380000.0</span><span class="p">,</span> <span class="mf">4928000.0</span><span class="p">,</span> <span class="mf">420000.0</span><span class="p">,</span> <span class="mf">4984000.0</span><span class="p">),</span>
 <a id="__codelineno-1-30" name="__codelineno-1-30" href="#__codelineno-1-30"></a>    <span class="n">crs</span><span class="o">=</span><span class="s2">&quot;EPSG:32615&quot;</span><span class="p">,</span>
@@ -709,7 +755,7 @@
 <p>Before computing an array, you can ask what DuckDB queries and COG reads would
 fire without touching any pixel data. The <code>da.lazycogs.explain()</code> method runs
 the same spatial queries as <code>.compute()</code> but stops before any I/O:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="n">da</span> <span class="o">=</span> <span class="n">lazycogs</span><span class="o">.</span><span class="n">open</span><span class="p">(</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="n">da</span> <span class="o">=</span> <span class="k">await</span> <span class="n">lazycogs</span><span class="o">.</span><span class="n">open_async</span><span class="p">(</span>
 <a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a>    <span class="s2">&quot;items.parquet&quot;</span><span class="p">,</span>
 <a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a>    <span class="n">bbox</span><span class="o">=</span><span class="p">(</span><span class="mf">380000.0</span><span class="p">,</span> <span class="mf">4928000.0</span><span class="p">,</span> <span class="mf">420000.0</span><span class="p">,</span> <span class="mf">4984000.0</span><span class="p">),</span>
 <a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a>    <span class="n">crs</span><span class="o">=</span><span class="s2">&quot;EPSG:32615&quot;</span><span class="p">,</span>
@@ -730,6 +776,11 @@ the same spatial queries as <code>.compute()</code> but stops before any I/O:</p
 <a id="__codelineno-2-19" name="__codelineno-2-19" href="#__codelineno-2-19"></a>
 <a id="__codelineno-2-20" name="__codelineno-2-20" href="#__codelineno-2-20"></a><span class="c1"># Fetch COG headers to see which overview level and pixel window would be read</span>
 <a id="__codelineno-2-21" name="__codelineno-2-21" href="#__codelineno-2-21"></a><span class="n">plan_full</span> <span class="o">=</span> <span class="n">da</span><span class="o">.</span><span class="n">lazycogs</span><span class="o">.</span><span class="n">explain</span><span class="p">(</span><span class="n">fetch_headers</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+<a id="__codelineno-2-22" name="__codelineno-2-22" href="#__codelineno-2-22"></a><span class="nb">print</span><span class="p">(</span><span class="n">plan_full</span><span class="o">.</span><span class="n">summary</span><span class="p">())</span>  <span class="c1"># shows overview level distribution and avg window size</span>
+<a id="__codelineno-2-23" name="__codelineno-2-23" href="#__codelineno-2-23"></a>
+<a id="__codelineno-2-24" name="__codelineno-2-24" href="#__codelineno-2-24"></a><span class="c1"># Inspect per-item overview and window details</span>
+<a id="__codelineno-2-25" name="__codelineno-2-25" href="#__codelineno-2-25"></a><span class="n">df_full</span> <span class="o">=</span> <span class="n">plan_full</span><span class="o">.</span><span class="n">to_dataframe</span><span class="p">()</span>
+<a id="__codelineno-2-26" name="__codelineno-2-26" href="#__codelineno-2-26"></a><span class="n">df_full</span><span class="p">[[</span><span class="s2">&quot;item_id&quot;</span><span class="p">,</span> <span class="s2">&quot;band&quot;</span><span class="p">,</span> <span class="s2">&quot;overview_level&quot;</span><span class="p">,</span> <span class="s2">&quot;overview_resolution&quot;</span><span class="p">,</span> <span class="s2">&quot;window_width&quot;</span><span class="p">,</span> <span class="s2">&quot;window_height&quot;</span><span class="p">]]</span>
 </code></pre></div>
 <p>The <code>ExplainPlan</code> returned shows how many items are matched per chunk, the
 distribution of items-per-chunk (useful for spotting over-lapping scene edges),
