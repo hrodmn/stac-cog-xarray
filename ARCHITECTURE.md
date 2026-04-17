@@ -25,7 +25,7 @@ src/lazycogs/
   _core.py           Entry point. open() / open_async(), band discovery, time-step building.
   _backend.py        StacBackendArray (per-band) and MultiBandStacBackendArray (4-D wrapper) — xarray BackendArray implementations that bridge xarray indexing to chunk reads.
   _chunk_reader.py   Async mosaic logic: open COGs, select overviews, read windows, reproject, mosaic.
-  _executor.py       Shared, bounded ThreadPoolExecutor for CPU-bound reprojection work. Prevents thread proliferation when dask parallelizes many chunks simultaneously.
+  _executor.py       Per-chunk reprojection thread pool configuration. Exposes set_reproject_workers() and get_max_workers(); the actual pool is created per event loop in _backend.py.
   _explain.py        Dry-run read estimator. Registers the da.lazycogs.explain() xarray accessor.
   _grid.py           Compute output affine transform and coordinate arrays from bbox + resolution.
   _reproject.py      Nearest-neighbor reprojection using pyproj Transformer + numpy fancy indexing.
