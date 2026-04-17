@@ -69,12 +69,19 @@ def test_select_overview_target_equal_to_native_returns_none():
     assert _select_overview(geotiff, 10.0) is None
 
 
-def test_select_overview_returns_finest_sufficient_overview():
-    """Returns the finest overview whose resolution >= target."""
+def test_select_overview_returns_coarsest_non_upsampling_overview():
+    """Returns the coarsest overview whose resolution <= target."""
     geotiff = _mock_geotiff(10.0, [20.0, 40.0, 80.0])
     ov = _select_overview(geotiff, 30.0)
-    # Target is 30 m → finest overview >= 30 m is the 40 m one (index 1)
-    assert ov is geotiff.overviews[1]
+    # Target is 30 m → coarsest overview <= 30 m is the 20 m one (index 0)
+    assert ov is geotiff.overviews[0]
+
+
+def test_select_overview_target_between_native_and_finest_returns_none():
+    """Returns None when target falls between native res and the finest overview."""
+    geotiff = _mock_geotiff(10.0, [20.0, 40.0, 80.0])
+    # 15 m > 10 m native, but 20 m finest overview > 15 m → upsampling; use full res
+    assert _select_overview(geotiff, 15.0) is None
 
 
 def test_select_overview_exact_match():

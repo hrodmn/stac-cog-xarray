@@ -1,6 +1,6 @@
 """Tests for StacBackendArray._chunk_bbox_4326 and _raw_getitem."""
 
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 
 import numpy as np
 import pytest
@@ -124,13 +124,13 @@ def test_raw_getitem_with_items_calls_mosaic(wgs84):
     # async_mosaic_chunk returns (bands, h, w); band 0 is extracted
     fake_chunk = np.full((1, 1, 4), 42.0, dtype=np.float32)
 
-    def _close_and_return_chunk(coro):
-        coro.close()
-        return fake_chunk
-
     with (
         patch("lazycogs._backend.rustac.search_sync", return_value=fake_items),
-        patch("lazycogs._backend.asyncio.run", side_effect=_close_and_return_chunk),
+        patch(
+            "lazycogs._backend.async_mosaic_chunk",
+            new_callable=AsyncMock,
+            return_value=fake_chunk,
+        ),
     ):
         result = arr._raw_getitem((0, slice(0, 1), slice(0, 4)))
 
@@ -142,23 +142,13 @@ def test_raw_getitem_chunk_affine_offset(wgs84):
     """Chunk affine is translated by (x_start, y_start) from the full grid."""
     arr = _make_array(wgs84)
 
-    captured_affines = []
-
-    def fake_mosaic(*args, **kwargs):
-        # Capture the chunk_affine passed to async_mosaic_chunk
-        captured_affines.append(kwargs.get("chunk_affine"))
-        return np.zeros((1, 1, 2), dtype=np.float32)
-
-    def _close_and_return(coro):
-        coro.close()
-        return np.zeros((1, 1, 2), dtype=np.float32)
-
     fake_items = [{"id": "x"}]
     with (
         patch("lazycogs._backend.rustac.search_sync", return_value=fake_items),
         patch(
-            "lazycogs._backend.asyncio.run",
-            side_effect=_close_and_return,
+            "lazycogs._backend.async_mosaic_chunk",
+            new_callable=AsyncMock,
+            return_value=np.zeros((1, 1, 2), dtype=np.float32),
         ),
     ):
         arr._raw_getitem((0, slice(0, 1), slice(2, 4)))
