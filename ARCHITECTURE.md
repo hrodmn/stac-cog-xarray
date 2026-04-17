@@ -25,6 +25,7 @@ src/lazycogs/
   _core.py           Entry point. open() / open_async(), band discovery, time-step building.
   _backend.py        StacBackendArray (per-band) and MultiBandStacBackendArray (4-D wrapper) — xarray BackendArray implementations that bridge xarray indexing to chunk reads.
   _chunk_reader.py   Async mosaic logic: open COGs, select overviews, read windows, reproject, mosaic.
+  _executor.py       Shared, bounded ThreadPoolExecutor for CPU-bound reprojection work. Prevents thread proliferation when dask parallelizes many chunks simultaneously.
   _explain.py        Dry-run read estimator. Registers the da.lazycogs.explain() xarray accessor.
   _grid.py           Compute output affine transform and coordinate arrays from bbox + resolution.
   _reproject.py      Nearest-neighbor reprojection using pyproj Transformer + numpy fancy indexing.
@@ -154,13 +155,13 @@ There are three nested layers of concurrency in a chunk read.
 
 **asyncio (item level).** Inside a chunk's event loop, `async_mosaic_chunk` processes overlapping items in batches of `max_concurrent_reads` (configurable via `open()`, default 32). Each batch fires `_read_item_band()` concurrently via `asyncio.gather` with an `asyncio.Semaphore` enforcing the limit. COG header reads and tile fetches from `async-geotiff` are all awaitable, so the event loop multiplexes them without blocking. Batching caps peak in-flight memory and enables true early exit: if the mosaic method signals completion within a batch, subsequent batches are never issued.
 
-**Thread pool (CPU work per item).** `reproject_array` is synchronous CPU-bound work — there is no way to await it. Calling it directly in the coroutine would block the event loop and stall all other pending tile reads in the same `asyncio.gather`. Instead, each completed tile read immediately submits its reprojection to the event loop's default `ThreadPoolExecutor` via `loop.run_in_executor(None, ...)`. The event loop is then free to process the next completed tile read while earlier reprojections run in parallel on other threads.
+**Thread pool (CPU work per item).** `reproject_array` is synchronous CPU-bound work — there is no way to await it. Calling it directly in the coroutine would block the event loop and stall all other pending tile reads in the same `asyncio.gather`. Instead, each completed tile read immediately submits its reprojection to a shared process-wide `ThreadPoolExecutor` via `loop.run_in_executor(get_reproject_executor(), ...)` (`_executor.py`). The event loop is then free to process the next completed tile read while earlier reprojections run in parallel on other threads.
 
 This means I/O and CPU work overlap: reprojections for items whose tiles arrived first run while tiles for other items are still in flight.
 
 **Why threads, not a process pool.** `pyproj.Transformer.transform()` and numpy's fancy-indexing both release the GIL during their heavy inner loops. Threads therefore give real CPU parallelism here — not just interleaving — without the overhead of process spawning and array pickling that a `ProcessPoolExecutor` would require.
 
-**Thread count under dask.** `run_in_executor(None, ...)` uses the event loop's default executor, which Python sizes at `min(32, cpu_count + 4)`. Each dask worker thread calls `asyncio.run()` and gets a fresh event loop with its own executor. Under heavy parallelism the total thread count can reach `dask_workers × (cpu_count + 4)`. In practice these threads are short-lived and the OS scheduler handles it, but it is worth keeping in mind when tuning dask worker counts on memory-constrained machines.
+**Bounded reprojection pool.** `_executor.py` maintains a single `ThreadPoolExecutor` for the whole process, created lazily on first use and reused across every event loop and every dask worker. The default worker count is `min(os.cpu_count(), 4)`. Because all dask tasks share one pool, total reprojection parallelism is bounded regardless of how many chunks execute concurrently — no thread proliferation under heavy dask parallelism. Call `lazycogs.set_reproject_workers(n)` before any reads to change the limit: lower it on a shared JupyterHub, raise it toward `os.cpu_count()` on a dedicated machine.
 
 **Jupyter fallback.** Jupyter kernels run a persistent event loop, which prevents re-entrant `asyncio.run()` calls. `_run_coroutine()` detects this with `asyncio.get_running_loop()` and falls back to spawning a single-worker `ThreadPoolExecutor`, submitting `asyncio.run(coro)` to that thread so it gets its own loop. The rest of the concurrency model is unchanged.
 
