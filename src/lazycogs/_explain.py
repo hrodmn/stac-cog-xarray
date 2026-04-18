@@ -16,12 +16,7 @@ from pyproj import CRS, Transformer
 import rustac
 
 from lazycogs._backend import StacBackendArray, _run_coroutine
-from lazycogs._chunk_reader import (
-    _chunk_bbox_native,
-    _native_window,
-    _select_overview,
-    _target_res_and_transformer,
-)
+from lazycogs._chunk_reader import _open_and_window
 
 if TYPE_CHECKING:
     from obstore.store import ObjectStore
@@ -478,42 +473,20 @@ async def _inspect_item_async(
         the item has no matching asset or the chunk does not overlap.
 
     """
-    from async_geotiff import GeoTIFF
-
-    from lazycogs._store import path_from_href, store_from_href
-
-    asset = item.get("assets", {}).get(band)
-    if asset is None:
+    opened = await _open_and_window(
+        item, band, chunk_affine, dst_crs, chunk_width, chunk_height, store=store
+    )
+    if opened is None:
         return None
+    geotiff, reader, window, _ = opened
 
-    href = asset["href"]
-    if store is not None:
-        path = path_from_href(href)
-        geotiff_store = store
-    else:
-        geotiff_store, path = store_from_href(href)
-
-    geotiff = await GeoTIFF.open(path, store=geotiff_store)
-
-    target_res_native, transformer = _target_res_and_transformer(
-        chunk_affine, chunk_width, chunk_height, dst_crs, geotiff.crs
-    )
-    overview = _select_overview(geotiff, target_res_native)
-    reader = overview if overview is not None else geotiff
-    bbox_native = _chunk_bbox_native(
-        chunk_affine, chunk_width, chunk_height, transformer
-    )
-    window = _native_window(reader, bbox_native, reader.width, reader.height)
-
-    overview_level = geotiff.overviews.index(overview) if overview is not None else None
-    overview_resolution = abs(reader.transform.a)
-
+    overview_level = geotiff.overviews.index(reader) if reader is not geotiff else None
     return CogRead(
         item_id=item.get("id", ""),
         asset_key=band,
-        href=href,
+        href=item["assets"][band]["href"],
         overview_level=overview_level,
-        overview_resolution=overview_resolution,
+        overview_resolution=abs(reader.transform.a),
         window_col_off=window.col_off if window is not None else None,
         window_row_off=window.row_off if window is not None else None,
         window_width=window.width if window is not None else None,

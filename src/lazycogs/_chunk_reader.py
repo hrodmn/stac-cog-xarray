@@ -188,38 +188,21 @@ def _native_window(
     )
 
 
-async def _read_item_band(
+async def _open_and_window(
     item: dict,
     band: str,
     chunk_affine: Affine,
     dst_crs: CRS,
     chunk_width: int,
     chunk_height: int,
-    nodata: float | None,
     store: ObjectStore | None = None,
-) -> tuple[np.ndarray, float | None] | None:
-    """Read and reproject one band from one STAC item.
+) -> tuple[GeoTIFF, GeoTIFF | Overview, Window | None, str] | None:
+    """Open a COG asset and compute the pixel window covering the chunk.
 
-    Args:
-        item: STAC item dict containing an ``assets`` key.
-        band: Asset key identifying the band to read.
-        chunk_affine: Affine transform of the destination chunk.
-        dst_crs: CRS of the destination chunk.
-        chunk_width: Width of the destination chunk in pixels.
-        chunk_height: Height of the destination chunk in pixels.
-        nodata: No-data fill value.  When ``None``, the value stored in the
-            COG header (``GeoTIFF.nodata``) is used if present.
-        store: Optional pre-configured obstore ``ObjectStore`` instance.
-            When provided, it is used directly and the path is extracted from
-            the asset HREF (path component only).  When ``None``, the store
-            is resolved and cached via :func:`~lazycogs._store.store_from_href`.
-
-    Returns:
-        A tuple of ``(array, effective_nodata)`` where *array* has shape
-        ``(bands, chunk_height, chunk_width)`` and *effective_nodata* is the
-        nodata value that was applied (may be ``None``).  Returns ``None`` if
-        the item's footprint does not overlap the chunk.
-
+    Returns ``(geotiff, reader, window, path)`` where *reader* is an overview
+    when one matches the target resolution and *window* is ``None`` if the
+    chunk does not overlap the source image. Returns ``None`` when the item
+    has no matching asset.
     """
     asset = item.get("assets", {}).get(band)
     if asset is None:
@@ -236,15 +219,9 @@ async def _read_item_band(
     geotiff = await GeoTIFF.open(path, store=store)
     logger.debug("GeoTIFF.open %s took %.3fs", path, time.perf_counter() - t0)
 
-    # Prefer the caller-supplied nodata; fall back to the value in the COG header.
-    effective_nodata = nodata if nodata is not None else geotiff.nodata
-    src_crs = geotiff.crs
-    # Transformer is reused below for the bbox calculation and inside compute_warp_map.
     target_res_native, t = _target_res_and_transformer(
-        chunk_affine, chunk_width, chunk_height, dst_crs, src_crs
+        chunk_affine, chunk_width, chunk_height, dst_crs, geotiff.crs
     )
-
-    reader: GeoTIFF | Overview
     overview = _select_overview(geotiff, target_res_native)
     if overview is not None:
         logger.debug(
@@ -254,11 +231,40 @@ async def _read_item_band(
             target_res_native,
             path,
         )
-    reader = overview if overview is not None else geotiff
+    reader: GeoTIFF | Overview = overview if overview is not None else geotiff
     bbox_native = _chunk_bbox_native(chunk_affine, chunk_width, chunk_height, t)
     window = _native_window(reader, bbox_native, reader.width, reader.height)
+    return geotiff, reader, window, path
+
+
+async def _read_item_band(
+    item: dict,
+    band: str,
+    chunk_affine: Affine,
+    dst_crs: CRS,
+    chunk_width: int,
+    chunk_height: int,
+    nodata: float | None,
+    store: ObjectStore | None = None,
+) -> tuple[np.ndarray, float | None] | None:
+    """Read and reproject one band from one STAC item.
+
+    Returns a tuple of ``(array, effective_nodata)`` where *array* has shape
+    ``(bands, chunk_height, chunk_width)`` and *effective_nodata* is the
+    nodata value that was applied (may be ``None``).  Returns ``None`` if the
+    item has no matching asset or its footprint does not overlap the chunk.
+    """
+    opened = await _open_and_window(
+        item, band, chunk_affine, dst_crs, chunk_width, chunk_height, store=store
+    )
+    if opened is None:
+        return None
+    geotiff, reader, window, path = opened
     if window is None:
         return None
+
+    # Prefer the caller-supplied nodata; fall back to the value in the COG header.
+    effective_nodata = nodata if nodata is not None else geotiff.nodata
 
     t0 = time.perf_counter()
     raster = await reader.read(window=window)
