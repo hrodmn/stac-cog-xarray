@@ -142,106 +142,101 @@ class ExplainPlan:
         """Number of chunks with zero matching COG files."""
         return sum(1 for c in self.chunk_reads if c.n_cog_reads == 0)
 
+    @property
+    def _n_tiles(self) -> tuple[int, int]:
+        """Number of spatial tiles along (x, y) under the current chunking."""
+        return (
+            max(1, -(-self.dst_width // self.chunk_width)),
+            max(1, -(-self.dst_height // self.chunk_height)),
+        )
+
     def __repr__(self) -> str:
         """Return a compact single-line summary."""
-        n_bands = len(self.bands)
-        n_time = len(self.time_coords)
-        n_spatial = (
-            self.total_chunk_reads // max(1, n_bands * n_time)
-            if n_bands and n_time
-            else self.total_chunk_reads
-        )
+        n_x, n_y = self._n_tiles
         return (
-            f"ExplainPlan: {n_bands} band(s) x {n_time} time step(s) x "
-            f"{n_spatial} spatial chunk(s) = {self.total_chunk_reads} chunk read(s)\n"
+            f"ExplainPlan: {len(self.bands)} band(s) x {len(self.time_coords)} "
+            f"time step(s) x {n_x * n_y} spatial chunk(s) "
+            f"= {self.total_chunk_reads} chunk read(s)\n"
             f"  Grid: {self.dst_width}x{self.dst_height} px | "
             f"COG reads: {self.total_cog_reads} "
             f"(fetch_headers={self.fetch_headers})"
         )
 
-    def summary(self) -> str:
-        """Return a multi-line human-readable summary of the explain plan.
+    def _time_range(self) -> str:
+        """Return a human-readable time range or ``"none"``."""
+        if not self.time_coords:
+            return "none"
+        t0 = str(self.time_coords[0])[:10]
+        t1 = str(self.time_coords[-1])[:10]
+        return f"{t0} - {t1}" if t0 != t1 else t0
 
-        Returns:
-            A formatted string describing the grid, chunking, and item
-            distribution across chunks.
+    def _header_lines(self) -> list[str]:
+        """Return the top section of :meth:`summary` (grid + chunking)."""
+        n_x, n_y = self._n_tiles
+        return [
+            "=== ExplainPlan ===",
+            f"Parquet:    {self.href}",
+            f"CRS:        {self.crs}  |  Resolution: {self.resolution} units/px  |  Grid: {self.dst_width} x {self.dst_height} px",
+            f"Bands ({len(self.bands)}):  {', '.join(self.bands)}",
+            f"Time steps: {len(self.time_coords)} ({self._time_range()})",
+            f"Chunks:     {self.chunk_width} x {self.chunk_height} px -> {n_x}x{n_y} spatial tiles",
+        ]
 
-        """
-        n_bands = len(self.bands)
-        n_time = len(self.time_coords)
-        n_x_tiles = max(1, -(-self.dst_width // self.chunk_width))  # ceiling division
-        n_y_tiles = max(1, -(-self.dst_height // self.chunk_height))
-
-        if self.time_coords:
-            t0 = str(self.time_coords[0])[:10]
-            t1 = str(self.time_coords[-1])[:10]
-            time_range = f"{t0} - {t1}" if t0 != t1 else t0
-        else:
-            time_range = "none"
-
+    def _distribution_lines(self) -> list[str]:
+        """Return the chunk-COG distribution section of :meth:`summary`."""
+        n_x, n_y = self._n_tiles
         counts = Counter(c.n_cog_reads for c in self.chunk_reads)
         total = len(self.chunk_reads) or 1
-
-        def pct(n: int) -> str:
-            return f"{100 * n / total:.1f}%"
-
         zero = counts.get(0, 0)
         one = counts.get(1, 0)
         two_plus = sum(v for k, v in counts.items() if k >= 2)
-        max_cog_reads = max((c.n_cog_reads for c in self.chunk_reads), default=0)
 
-        bands_str = ", ".join(self.bands)
+        def pct(n: int) -> str:
+            return f"({100 * n / total:.1f}%)"
 
-        base = (
-            f"=== ExplainPlan ===\n"
-            f"Parquet:    {self.href}\n"
-            f"CRS:        {self.crs}  |  "
-            f"Resolution: {self.resolution} units/px  |  "
-            f"Grid: {self.dst_width} x {self.dst_height} px\n"
-            f"Bands ({n_bands}):  {bands_str}\n"
-            f"Time steps: {n_time} ({time_range})\n"
-            f"Chunks:     {self.chunk_width} x {self.chunk_height} px "
-            f"-> {n_x_tiles}x{n_y_tiles} spatial tiles\n"
-            f"\n"
+        return [
             f"Total chunk reads:     {self.total_chunk_reads} "
-            f"({n_bands} band(s) x {n_time} time step(s) x {n_x_tiles * n_y_tiles} spatial tile(s))\n"
-            f"Total COG reads:       {self.total_cog_reads}\n"
-            f"Chunks with 0 COGs:    {zero:>4} ({pct(zero)})\n"
-            f"Chunks with 1 COG:     {one:>4} ({pct(one)})\n"
-            f"Chunks with 2+ COGs:   {two_plus:>4} ({pct(two_plus)})\n"
-            f"Max COGs per chunk:    {max_cog_reads}"
-        )
+            f"({len(self.bands)} band(s) x {len(self.time_coords)} time step(s) x {n_x * n_y} spatial tile(s))",
+            f"Total COG reads:       {self.total_cog_reads}",
+            f"Chunks with 0 COGs:    {zero:>4} {pct(zero)}",
+            f"Chunks with 1 COG:     {one:>4} {pct(one)}",
+            f"Chunks with 2+ COGs:   {two_plus:>4} {pct(two_plus)}",
+            f"Max COGs per chunk:    {max((c.n_cog_reads for c in self.chunk_reads), default=0)}",
+        ]
 
+    def _header_detail_lines(self) -> list[str]:
+        """Return overview/window stats when ``fetch_headers`` is true."""
         if not self.fetch_headers:
-            return (
-                base
-                + "\n(Pass fetch_headers=True to see overview levels and pixel windows.)"
-            )
-
+            return [
+                "(Pass fetch_headers=True to see overview levels and pixel windows.)"
+            ]
         all_reads = [r for c in self.chunk_reads for r in c.cog_reads]
         if not all_reads:
-            return base + "\nOverview levels: n/a (no matched COG reads)"
-
+            return ["Overview levels: n/a (no matched COG reads)"]
         ov_counts: Counter[str] = Counter()
         for r in all_reads:
-            label = "full" if r.overview_level is None else f"ovr {r.overview_level}"
-            ov_counts[label] += 1
-
-        ov_lines = "  ".join(f"{k}: {v}" for k, v in sorted(ov_counts.items()))
-        window_widths = [
-            r.window_width for r in all_reads if r.window_width is not None
+            ov_counts[
+                "full" if r.overview_level is None else f"ovr {r.overview_level}"
+            ] += 1
+        widths = [r.window_width for r in all_reads if r.window_width is not None]
+        heights = [r.window_height for r in all_reads if r.window_height is not None]
+        avg_w = sum(widths) / len(widths) if widths else 0
+        avg_h = sum(heights) / len(heights) if heights else 0
+        return [
+            f"Overview levels:       {'  '.join(f'{k}: {v}' for k, v in sorted(ov_counts.items()))}",
+            f"Avg read window:       {avg_w:.0f} x {avg_h:.0f} px",
+            "(Use .to_dataframe() for per-item overview and window details.)",
         ]
-        window_heights = [
-            r.window_height for r in all_reads if r.window_height is not None
-        ]
-        avg_w = sum(window_widths) / len(window_widths) if window_widths else 0
-        avg_h = sum(window_heights) / len(window_heights) if window_heights else 0
 
-        return (
-            base
-            + f"\nOverview levels:       {ov_lines}"
-            + f"\nAvg read window:       {avg_w:.0f} x {avg_h:.0f} px"
-            + "\n(Use .to_dataframe() for per-item overview and window details.)"
+    def summary(self) -> str:
+        """Return a multi-line human-readable summary of the explain plan."""
+        return "\n".join(
+            [
+                *self._header_lines(),
+                "",
+                *self._distribution_lines(),
+                *self._header_detail_lines(),
+            ]
         )
 
     def to_dataframe(self):
