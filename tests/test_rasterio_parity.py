@@ -32,7 +32,7 @@ from pyproj import CRS
 
 from lazycogs._chunk_reader import _native_window, _select_overview
 from lazycogs._reproject import _get_transformer, apply_warp_map, compute_warp_map
-from lazycogs._store import store_from_href
+from lazycogs._store import resolve
 
 # Resolutions chosen to bracket each overview boundary (20, 40, 80, 160 m).
 # Includes native resolution, between-level values, and one well above all overviews.
@@ -73,7 +73,7 @@ async def _read_lazycogs(
     dst_crs: CRS,
 ) -> np.ndarray:
     """Run the lazycogs read pipeline and return the output array."""
-    store, path = store_from_href(href)
+    store, path = resolve(href)
     geotiff = await GeoTIFF.open(path, store=store)
     src_crs = geotiff.crs
     same_crs = dst_crs.equals(src_crs)

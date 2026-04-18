@@ -101,6 +101,31 @@ The `ExplainPlan` returned shows how many items are matched per chunk, the
 distribution of items-per-chunk (useful for spotting over-lapping scene edges),
 and the empty-chunk fraction (useful for diagnosing sparse time series).
 
+## Custom object stores
+
+By default, `lazycogs.open()` parses each asset HREF into an obstore `ObjectStore` using [`obstore.store.from_url`](https://developmentseed.org/obstore/latest/api/store/from_url/). Native cloud schemes (`s3://`, `s3a://`, `gs://`) default to unsigned requests so public buckets work without credentials.
+
+For anything else — authenticated buckets, signed URLs, request-payer buckets, custom endpoints, MinIO, Cloudflare R2 with an API token, etc. — construct the store yourself and pass it via `store=`. Only the path portion of each HREF is then used to locate objects; the store must be rooted at the same `scheme://netloc` the HREFs point to.
+
+```python
+from obstore.store import S3Store, GCSStore, HTTPStore
+
+# Authenticated S3 (credentials from env or boto3 chain)
+store = S3Store(bucket="my-private-bucket", region="us-west-2")
+da = lazycogs.open("items.parquet", ..., store=store)
+
+# Requester-pays S3
+store = S3Store(bucket="usgs-landsat", region="us-west-2", request_payer=True)
+
+# Signed HTTPS (e.g. a SAS-token URL issued by a STAC API)
+store = HTTPStore.from_url("https://myaccount.blob.core.windows.net/container?sv=...")
+
+# GCS with a service-account key
+store = GCSStore(bucket="my-bucket", service_account_path="/path/to/key.json")
+```
+
+See the [obstore store docs](https://developmentseed.org/obstore/latest/api/store/) for the full set of constructors and options.
+
 ## Tuning concurrency
 
 lazycogs uses two independent concurrency controls:

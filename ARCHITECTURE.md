@@ -29,7 +29,7 @@ src/lazycogs/
   _explain.py        Dry-run read estimator. Registers the da.lazycogs.explain() xarray accessor.
   _grid.py           Compute output affine transform and coordinate arrays from bbox + resolution.
   _reproject.py      Nearest-neighbor reprojection using pyproj Transformer + numpy fancy indexing.
-  _store.py          Parse cloud HREFs into thread-local obstore Store instances; extract object paths when a store is provided externally.
+  _store.py          Resolve cloud HREFs into obstore Store instances (or route through a user-supplied store) with a thread-local cache.
   _temporal.py       Temporal grouping strategies (day, week, month, year, fixed-day-count).
   _mosaic_methods.py Pixel-selection strategies (First, Highest, Lowest, Mean, Median, Stdev, Count).
 ```
@@ -97,7 +97,7 @@ With `fetch_headers=True`, each matched COG header is fetched (a small HTTP rang
 
 1. Processes items in batches of `max_concurrent_reads` (default 32) using `asyncio.gather` with an `asyncio.Semaphore` to bound the number of concurrent reads. This limits peak in-flight memory when a chunk overlaps many COGs.
 2. For each item:
-   a. If a `store` was supplied by the caller, `path_from_href(href)` extracts just the object path within that store. Otherwise, `store_from_href(href)` returns a thread-local `obstore` store and an object path.
+   a. `resolve(href, store)` returns an `(ObjectStore, path)` pair. If the caller supplied a `store`, it is returned unchanged and only the object path is extracted from the HREF; otherwise `obstore.store.from_url` constructs a store from `scheme://netloc` and caches it per thread.
    b. `await GeoTIFF.open(path, store=store)` opens the COG header.
    c. `_select_overview()` picks the coarsest overview whose pixel size is still ≤ the target resolution.
    d. `_native_window()` computes the pixel window in source space that covers the chunk bbox, clamped to the image extent.
@@ -260,9 +260,9 @@ mean that requires all weeks to be present before reducing).
 
 ## Store caching and the `store` parameter
 
-By default, `store_from_href()` in `_store.py` maintains a thread-local `dict[str, Store]` keyed by root URL (`scheme://netloc`). Because dask tasks run in threads, this avoids repeated connection setup within a single task while remaining safe across concurrent tasks.
+`resolve()` in `_store.py` defers to `obstore.store.from_url` for scheme detection — including the special-case HTTPS routing for `amazonaws.com`, `r2.cloudflarestorage.com`, and Azure hosts — rather than maintaining its own list of known object-store domains. The constructed store is cached per thread in a `dict[str, ObjectStore]` keyed by root URL (`scheme://netloc`). Because dask tasks run in threads, this avoids repeated connection setup within a single task while remaining safe across concurrent tasks.
 
-When the caller supplies a pre-configured `ObjectStore` via the `store` parameter to `open()` / `open_async()`, automatic resolution is skipped entirely. The store is stored on `StacBackendArray` and forwarded through `async_mosaic_chunk` and `_read_item_band` to `GeoTIFF.open()`. Only the object path is extracted from each asset HREF via `path_from_href()`. This path is explicit — it supports custom credentials, non-default endpoints, and private buckets without relying on environment-variable detection.
+Native cloud schemes (`s3`, `s3a`, `gs`) default to `skip_signature=True` so public buckets work without credentials. HTTPS URLs get no such default: if `from_url` routes `https://bucket.s3.amazonaws.com/...` to an `S3Store`, it will attempt to sign requests normally. For authenticated access or any non-default configuration, the caller is expected to construct an `ObjectStore` and pass it via the `store=` parameter to `open()` / `open_async()`; `resolve()` then returns it unchanged and only extracts the object path from each HREF. No introspection is done on a user-supplied store — the caller is responsible for ensuring it is rooted at the same `scheme://netloc` the HREFs point to.
 
 ## Key dependencies
 

@@ -21,7 +21,7 @@ from lazycogs._reproject import (
     compute_warp_map,
     reproject_array,
 )
-from lazycogs._store import path_from_href, store_from_href
+from lazycogs._store import resolve as _resolve_store
 
 if TYPE_CHECKING:
     from obstore.store import ObjectStore
@@ -210,10 +210,7 @@ async def _open_and_window(
         return None
 
     href = asset["href"]
-    if store is not None:
-        path = path_from_href(href)
-    else:
-        store, path = store_from_href(href)
+    store, path = _resolve_store(href, store)
 
     t0 = time.perf_counter()
     geotiff = await GeoTIFF.open(path, store=store)
@@ -525,11 +522,7 @@ async def _read_item_bands(
 
     # Open all COGs concurrently for metadata.
     async def _open_band(band: str, href: str) -> tuple[str, GeoTIFF, ObjectStore]:
-        if store is not None:
-            path = path_from_href(href)
-            geotiff = await GeoTIFF.open(path, store=store)
-            return band, geotiff, store
-        band_store, path = store_from_href(href)
+        band_store, path = _resolve_store(href, store)
         geotiff = await GeoTIFF.open(path, store=band_store)
         return band, geotiff, band_store
 

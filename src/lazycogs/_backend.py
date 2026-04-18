@@ -99,7 +99,7 @@ class StacBackendArray(BackendArray):
         store: Pre-configured obstore ``ObjectStore`` instance shared across
             all chunk reads.  When ``None``, each asset HREF is resolved to a
             store via the thread-local cache in
-            :func:`~lazycogs._store.store_from_href`.
+            :func:`~lazycogs._store.resolve`.
         max_concurrent_reads: Maximum number of COG reads to run concurrently
             per chunk.  Limits peak in-flight memory when a chunk overlaps
             many items.  Defaults to 32.
