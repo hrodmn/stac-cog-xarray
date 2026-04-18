@@ -298,15 +298,6 @@ async def async_mosaic_chunk(
     if mosaic_method is None:
         mosaic_method = FirstMethod()
 
-    logger.debug(
-        "async_mosaic_chunk band=%r %dx%d px, %d items (max_concurrent_reads=%d)",
-        band,
-        chunk_width,
-        chunk_height,
-        len(items),
-        max_concurrent_reads,
-    )
-
     semaphore = asyncio.Semaphore(max_concurrent_reads)
 
     async def _guarded(item: dict) -> tuple[np.ndarray, float | None] | None:
@@ -342,16 +333,13 @@ async def async_mosaic_chunk(
     # Process items in batches of max_concurrent_reads so that:
     # 1. At most max_concurrent_reads arrays are held in memory at once.
     # 2. When the mosaic method signals is_done, we skip remaining batches.
-    t0 = time.perf_counter()
     done = False
-    items_read = 0
     for batch_start in range(0, len(items), max_concurrent_reads):
         batch = items[batch_start : batch_start + max_concurrent_reads]
         batch_results = await asyncio.gather(
             *[_guarded(item) for item in batch],
             return_exceptions=True,
         )
-        items_read += len(batch)
 
         for j, result in enumerate(batch_results):
             item_idx = batch_start + j
@@ -380,14 +368,6 @@ async def async_mosaic_chunk(
 
         if done:
             break
-
-    logger.debug(
-        "async_mosaic_chunk band=%r read %d/%d items in %.3fs",
-        band,
-        items_read,
-        len(items),
-        time.perf_counter() - t0,
-    )
 
     if mosaic_method._mosaic is None:
         bands = 1
@@ -561,11 +541,6 @@ async def _read_item_bands(
 
         window = _native_window(reader, bbox_native, reader.width, reader.height)
         if window is None:
-            logger.debug(
-                "Item %s band %r does not overlap chunk; skipping.",
-                item.get("id"),
-                band,
-            )
             continue
 
         band_read_plan.append(
@@ -656,15 +631,6 @@ async def async_mosaic_chunk_multiband(
     if mosaic_method_cls is None:
         mosaic_method_cls = FirstMethod
 
-    logger.debug(
-        "async_mosaic_chunk_multiband bands=%r %dx%d px, %d items (max_concurrent_reads=%d)",
-        bands,
-        chunk_width,
-        chunk_height,
-        len(items),
-        max_concurrent_reads,
-    )
-
     semaphore = asyncio.Semaphore(max_concurrent_reads)
 
     async def _guarded(item: dict) -> dict[str, tuple[np.ndarray, float | None]] | None:
@@ -702,16 +668,13 @@ async def async_mosaic_chunk_multiband(
         b: mosaic_method_cls() for b in bands
     }
 
-    t0 = time.perf_counter()
     done = False
-    items_read = 0
     for batch_start in range(0, len(items), max_concurrent_reads):
         batch = items[batch_start : batch_start + max_concurrent_reads]
         batch_results = await asyncio.gather(
             *[_guarded(item) for item in batch],
             return_exceptions=True,
         )
-        items_read += len(batch)
 
         for j, result in enumerate(batch_results):
             item_idx = batch_start + j
@@ -739,14 +702,6 @@ async def async_mosaic_chunk_multiband(
 
         if done:
             break
-
-    logger.debug(
-        "async_mosaic_chunk_multiband bands=%r read %d/%d items in %.3fs",
-        bands,
-        items_read,
-        len(items),
-        time.perf_counter() - t0,
-    )
 
     fill = nodata if nodata is not None else 0
     output: dict[str, np.ndarray] = {}
